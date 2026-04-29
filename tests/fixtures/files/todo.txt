@@ -1,0 +1,3 @@
+- learn pgvector
+- write parser
+- ship vault

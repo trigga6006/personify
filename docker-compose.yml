@@ -1,0 +1,21 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: personify-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: personify
+      POSTGRES_PASSWORD: personify
+      POSTGRES_DB: personify
+    ports:
+      - "5544:5432"
+    volumes:
+      - personify_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U personify -d personify"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  personify_pg:

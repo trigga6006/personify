@@ -1,0 +1,21 @@
+From MAILER-DAEMON Mon Jan  1 00:00:00 2024
+From: alice@example.com
+To: me@example.com
+Subject: Welcome
+Date: Mon, 01 Jan 2024 12:00:00 +0000
+Message-ID: <abc123@example.com>
+X-Gmail-Labels: Inbox,Important
+Content-Type: text/plain; charset=utf-8
+
+Hello, this is a welcome email about postgres.
+
+From MAILER-DAEMON Mon Jan  2 00:00:00 2024
+From: bob@example.com
+To: me@example.com
+Subject: Lunch?
+Date: Tue, 02 Jan 2024 09:30:00 +0000
+Message-ID: <def456@example.com>
+X-Gmail-Labels: Inbox
+Content-Type: text/plain; charset=utf-8
+
+Are you free Thursday?

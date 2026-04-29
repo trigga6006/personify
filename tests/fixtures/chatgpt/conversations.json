@@ -1,0 +1,39 @@
+[
+  {
+    "id": "conv-001",
+    "title": "Test conversation about postgres",
+    "create_time": 1700000000.0,
+    "mapping": {
+      "root": {
+        "id": "root",
+        "parent": null,
+        "children": ["m1"],
+        "message": null
+      },
+      "m1": {
+        "id": "m1",
+        "parent": "root",
+        "children": ["m2"],
+        "message": {
+          "id": "m1",
+          "author": {"role": "user"},
+          "create_time": 1700000010.0,
+          "content": {"parts": ["How do I use pgvector?"]},
+          "metadata": {"model_slug": "gpt-4"}
+        }
+      },
+      "m2": {
+        "id": "m2",
+        "parent": "m1",
+        "children": [],
+        "message": {
+          "id": "m2",
+          "author": {"role": "assistant"},
+          "create_time": 1700000020.0,
+          "content": {"parts": ["Install the extension and define a vector column."]},
+          "metadata": {"model_slug": "gpt-4"}
+        }
+      }
+    }
+  }
+]
