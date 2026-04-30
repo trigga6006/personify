@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Column, Index, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Column, Index, JSON, Numeric, String, Text, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 from personify.config import settings
@@ -148,3 +148,104 @@ class Tag(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint("item_id", "key", "value", name="uq_tags_item_kv"),
     )
+
+
+class GraphEntity(SQLModel, table=True):
+    __tablename__ = "entities"
+    id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(36), primary_key=True),
+    )
+    database_id: Optional[str] = Field(default=None, index=True, max_length=36)
+    type: str = Field(index=True)
+    name: str = Field(sa_column=Column(Text))
+    canonical_name: str = Field(sa_column=Column(Text))
+    description: Optional[str] = Field(default=None, sa_column=Column(Text))
+    metadata_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column("metadata", JSON))
+    source_count: int = 0
+    confidence: Optional[float] = Field(default=None, sa_column=Column(Numeric(4, 3)))
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("database_id", "type", "canonical_name", name="uq_entities_scope_type_name"),
+        Index("idx_entities_database_type", "database_id", "type"),
+        Index("idx_entities_canonical_name", "canonical_name"),
+    )
+
+
+class GraphEntityAlias(SQLModel, table=True):
+    __tablename__ = "entity_aliases"
+    id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(36), primary_key=True),
+    )
+    entity_id: str = Field(foreign_key="entities.id", index=True, max_length=36)
+    alias: str = Field(sa_column=Column(Text))
+    normalized_alias: str = Field(sa_column=Column(Text))
+    source: Optional[str] = None
+    created_at: datetime = Field(default_factory=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("entity_id", "normalized_alias", name="uq_entity_aliases_entity_normalized"),
+        Index("idx_entity_aliases_normalized_alias", "normalized_alias"),
+    )
+
+
+class GraphRelationship(SQLModel, table=True):
+    __tablename__ = "relationships"
+    id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(36), primary_key=True),
+    )
+    database_id: Optional[str] = Field(default=None, index=True, max_length=36)
+    source_entity_id: str = Field(foreign_key="entities.id", index=True, max_length=36)
+    target_entity_id: str = Field(foreign_key="entities.id", index=True, max_length=36)
+    relationship_type: str = Field(index=True)
+    confidence: Optional[float] = Field(default=None, sa_column=Column(Numeric(4, 3)))
+    metadata_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column("metadata", JSON))
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source_entity_id",
+            "target_entity_id",
+            "relationship_type",
+            name="uq_relationships_triplet",
+        ),
+        Index("idx_relationships_source", "source_entity_id"),
+        Index("idx_relationships_target", "target_entity_id"),
+        Index("idx_relationships_type", "relationship_type"),
+        Index("idx_relationships_database", "database_id"),
+    )
+
+
+class GraphEntityEvidence(SQLModel, table=True):
+    __tablename__ = "entity_evidence"
+    id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(36), primary_key=True),
+    )
+    entity_id: str = Field(foreign_key="entities.id", index=True, max_length=36)
+    source_type: str
+    source_id: Optional[str] = Field(default=None, max_length=36)
+    source_uri: Optional[str] = Field(default=None, sa_column=Column(Text))
+    quote: Optional[str] = Field(default=None, sa_column=Column(Text))
+    metadata_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column("metadata", JSON))
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class GraphRelationshipEvidence(SQLModel, table=True):
+    __tablename__ = "relationship_evidence"
+    id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(36), primary_key=True),
+    )
+    relationship_id: str = Field(foreign_key="relationships.id", index=True, max_length=36)
+    source_type: str
+    source_id: Optional[str] = Field(default=None, max_length=36)
+    source_uri: Optional[str] = Field(default=None, sa_column=Column(Text))
+    quote: Optional[str] = Field(default=None, sa_column=Column(Text))
+    metadata_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column("metadata", JSON))
+    created_at: datetime = Field(default_factory=_utcnow)

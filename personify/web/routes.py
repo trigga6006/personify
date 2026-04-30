@@ -13,6 +13,13 @@ from personify.db import get_session
 from personify.models import Account, IngestionRun, Item, RawExport
 from personify.parsers import PARSERS
 from personify.services.embed import embed_pending, embed_stats
+from personify.services.graph import (
+    add_entity_alias,
+    create_or_get_entity,
+    create_or_get_relationship,
+    get_entity_neighborhood,
+    search_entities,
+)
 from personify.services.ingest import (
     ingest_all_pending,
     ingest_export,
@@ -249,6 +256,101 @@ def post_embed(req: EmbedRequest) -> dict[str, Any]:
 @router.get("/api/embed/stats")
 def get_embed_stats() -> dict[str, Any]:
     return embed_stats()
+
+
+class GraphEntityCreateRequest(BaseModel):
+    type: str
+    name: str
+    description: Optional[str] = None
+    aliases: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    confidence: Optional[float] = None
+    database_id: Optional[str] = None
+
+
+class GraphRelationshipCreateRequest(BaseModel):
+    source_entity_id: str
+    target_entity_id: str
+    relationship_type: str
+    confidence: Optional[float] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    database_id: Optional[str] = None
+
+
+@router.get("/api/graph/entities/search")
+def get_graph_entities_search(
+    q: str, type: Optional[str] = None, limit: int = 20, s: Session = Depends(get_session)
+) -> dict[str, Any]:
+    entities = search_entities(s, q=q, entity_type=type, limit=limit)
+    return {"entities": entities}
+
+
+@router.get("/api/graph/entities/{entity_id}")
+def get_graph_entity(entity_id: str, s: Session = Depends(get_session)) -> dict[str, Any]:
+    from personify.models import GraphEntity, GraphEntityAlias, GraphEntityEvidence
+
+    entity = s.get(GraphEntity, entity_id)
+    if not entity:
+        raise HTTPException(status_code=404, detail="entity not found")
+    aliases = list(s.exec(select(GraphEntityAlias).where(GraphEntityAlias.entity_id == entity_id)).all())
+    evidence = list(s.exec(select(GraphEntityEvidence).where(GraphEntityEvidence.entity_id == entity_id)).all())
+    return {"entity": entity, "aliases": aliases, "evidence": evidence}
+
+
+@router.get("/api/graph/entities/{entity_id}/neighborhood")
+def get_graph_entity_neighborhood(
+    entity_id: str, depth: int = 1, s: Session = Depends(get_session)
+) -> dict[str, Any]:
+    return get_entity_neighborhood(s, entity_id=entity_id, depth=depth)
+
+
+@router.get("/api/graph/entities/{entity_id}/context")
+def get_graph_entity_context(entity_id: str, s: Session = Depends(get_session)) -> dict[str, Any]:
+    neighborhood = get_entity_neighborhood(s, entity_id=entity_id, depth=1)
+    center = neighborhood["center"]
+    if center is None:
+        raise HTTPException(status_code=404, detail="entity not found")
+    return {
+        "entity": center,
+        "summary": center.description or "",
+        "aliases": [],
+        "related_entities": [n for n in neighborhood["nodes"] if n.id != entity_id],
+        "relationships": neighborhood["edges"],
+        "evidence": [],
+        "suggested_queries": [f"{center.name} related work", f"{center.name} dependencies"],
+    }
+
+
+@router.post("/api/graph/entities")
+def post_graph_entity(req: GraphEntityCreateRequest, s: Session = Depends(get_session)) -> dict[str, Any]:
+    entity = create_or_get_entity(
+        s,
+        entity_type=req.type,
+        name=req.name,
+        description=req.description,
+        metadata=req.metadata,
+        confidence=req.confidence,
+        database_id=req.database_id,
+    )
+    for alias in req.aliases:
+        add_entity_alias(s, entity.id, alias)
+    return {"entity": entity}
+
+
+@router.post("/api/graph/relationships")
+def post_graph_relationship(
+    req: GraphRelationshipCreateRequest, s: Session = Depends(get_session)
+) -> dict[str, Any]:
+    rel = create_or_get_relationship(
+        s,
+        source_entity_id=req.source_entity_id,
+        target_entity_id=req.target_entity_id,
+        relationship_type=req.relationship_type,
+        confidence=req.confidence,
+        metadata=req.metadata,
+        database_id=req.database_id,
+    )
+    return {"relationship": rel}
 
 
 # ---- Vaults --------------------------------------------------------------
