@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator
 
-from personify.parsers._zip import unzip_or_passthrough
+from personify.parsers._zip import is_supported_archive, unzip_or_passthrough
 from personify.parsers.base import ParsedItem, ParserBase
 
 
@@ -36,7 +36,7 @@ class DiscordParser(ParserBase):
 
     @classmethod
     def detect(cls, path: Path) -> bool:
-        if path.is_file() and path.suffix.lower() == ".zip":
+        if path.is_file() and is_supported_archive(path):
             return True
         if path.is_dir() and (path / "messages").exists():
             return True

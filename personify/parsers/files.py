@@ -5,8 +5,9 @@ from pathlib import Path
 from typing import Iterator
 
 from personify.parsers.base import ParsedItem, ParserBase
+from personify.parsers._zip import is_supported_archive, unzip_or_passthrough
 
-_TEXT_EXTS = {".md", ".markdown", ".txt", ".rst", ".log"}
+_TEXT_EXTS = {".json", ".jsonl", ".md", ".markdown", ".txt", ".rst", ".log", ".csv"}
 
 
 def _read_pdf(path: Path) -> str:
@@ -31,7 +32,9 @@ class FilesParser(ParserBase):
     def detect(cls, path: Path) -> bool:
         if not path.is_dir():
             return path.is_file() and (
-                path.suffix.lower() in _TEXT_EXTS or path.suffix.lower() == ".pdf"
+                path.suffix.lower() in _TEXT_EXTS
+                or path.suffix.lower() == ".pdf"
+                or is_supported_archive(path)
             )
         for p in path.rglob("*"):
             if p.is_file() and (p.suffix.lower() in _TEXT_EXTS or p.suffix.lower() == ".pdf"):
@@ -39,6 +42,7 @@ class FilesParser(ParserBase):
         return False
 
     def iter_items(self, raw_path: Path, staging_dir: Path) -> Iterator[ParsedItem]:
+        raw_path = unzip_or_passthrough(raw_path, staging_dir)
         targets: list[Path]
         if raw_path.is_file():
             targets = [raw_path]

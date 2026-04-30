@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from personify.util.hashing import sha256_bytes, sha256_file, sha256_text
+from personify.util.hashing import sha256_bytes, sha256_directory, sha256_file, sha256_text
 
 
 def test_sha256_text_known() -> None:
@@ -20,3 +20,16 @@ def test_sha256_file(tmp_path: Path) -> None:
     digest, size = sha256_file(p)
     assert size == 5
     assert digest == sha256_text("hello")
+
+
+def test_sha256_directory_is_order_independent(tmp_path: Path) -> None:
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    (a / "nested").mkdir(parents=True)
+    (b / "nested").mkdir(parents=True)
+    (a / "one.txt").write_text("1", encoding="utf-8")
+    (a / "nested" / "two.txt").write_text("2", encoding="utf-8")
+    (b / "nested" / "two.txt").write_text("2", encoding="utf-8")
+    (b / "one.txt").write_text("1", encoding="utf-8")
+
+    assert sha256_directory(a) == sha256_directory(b)

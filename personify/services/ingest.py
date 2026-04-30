@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from personify.db import session_scope
-from personify.models import IngestionRun, Item, ItemMedia, ItemText, RawExport, Tag
+from personify.models import Embedding, IngestionRun, Item, ItemMedia, ItemText, RawExport, Tag
 from personify.parsers import ParsedItem, get_parser
 from personify.util.hashing import sha256_text
 from personify.util.vault import (
@@ -19,15 +19,29 @@ from personify.util.vault import (
 )
 
 
-def _existing_item(s: Session, source: str, native_id: str | None, content_hash: str) -> Item | None:
+def _existing_item(
+    s: Session,
+    source: str,
+    account: str,
+    native_id: str | None,
+    content_hash: str,
+) -> Item | None:
     if native_id:
         hit = s.exec(
-            select(Item).where(Item.source_slug == source, Item.native_id == native_id)
+            select(Item).where(
+                Item.source_slug == source,
+                Item.account_handle == account,
+                Item.native_id == native_id,
+            )
         ).first()
         if hit:
             return hit
     return s.exec(
-        select(Item).where(Item.source_slug == source, Item.content_hash == content_hash)
+        select(Item).where(
+            Item.source_slug == source,
+            Item.account_handle == account,
+            Item.content_hash == content_hash,
+        )
     ).first()
 
 
@@ -41,7 +55,13 @@ def _persist_item(
     body = parsed.body or ""
     content_hash = sha256_text(f"{parsed.kind}\0{parsed.title or ''}\0{body}")
 
-    existing = _existing_item(s, raw_export.source_slug, parsed.native_id, content_hash)
+    existing = _existing_item(
+        s,
+        raw_export.source_slug,
+        raw_export.account_handle,
+        parsed.native_id,
+        content_hash,
+    )
     if existing:
         return existing, False
 
@@ -62,7 +82,13 @@ def _persist_item(
         s.flush()
     except IntegrityError:
         s.rollback()
-        existing = _existing_item(s, raw_export.source_slug, parsed.native_id, content_hash)
+        existing = _existing_item(
+            s,
+            raw_export.source_slug,
+            raw_export.account_handle,
+            parsed.native_id,
+            content_hash,
+        )
         return existing, False  # type: ignore[return-value]
 
     if body:
@@ -171,6 +197,46 @@ def ingest_export(raw_export_id: int) -> IngestionRun:
     )
     with session_scope() as s:
         return s.get(IngestionRun, run_id)
+
+
+def reset_export(raw_export_id: int) -> dict[str, int]:
+    """Delete persisted derived records for one raw export.
+
+    The raw export row and vault/raw file are preserved. This is intended for
+    parser upgrades where normalized item bodies should be rebuilt.
+    """
+    with session_scope() as s:
+        item_ids = [
+            i.id
+            for i in s.exec(select(Item).where(Item.raw_export_id == raw_export_id)).all()
+            if i.id is not None
+        ]
+        if not item_ids:
+            run_count = len(
+                s.exec(
+                    select(IngestionRun).where(IngestionRun.raw_export_id == raw_export_id)
+                ).all()
+            )
+            for run in s.exec(
+                select(IngestionRun).where(IngestionRun.raw_export_id == raw_export_id)
+            ).all():
+                s.delete(run)
+            return {"items": 0, "runs": run_count}
+
+        for model in (Embedding, Tag, ItemMedia, ItemText):
+            for row in s.exec(select(model).where(model.item_id.in_(item_ids))).all():
+                s.delete(row)
+        for item in s.exec(select(Item).where(Item.id.in_(item_ids))).all():
+            if item.id is not None:
+                norm = normalized_path_for(item.id)
+                if norm.exists():
+                    norm.unlink()
+            s.delete(item)
+
+        runs = list(s.exec(select(IngestionRun).where(IngestionRun.raw_export_id == raw_export_id)).all())
+        for run in runs:
+            s.delete(run)
+        return {"items": len(item_ids), "runs": len(runs)}
 
 
 def ingest_source(source_slug: str) -> list[IngestionRun]:

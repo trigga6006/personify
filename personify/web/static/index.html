@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Personify · Vault</title>
+    <link rel="preconnect" href="https://api.fontshare.com" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside class="rail">
+        <button class="rail-vault" id="rail-vault" type="button" aria-haspopup="true" aria-expanded="false">
+          <div class="rail-mark">P</div>
+          <div class="rail-vault-text">
+            <div class="rail-title">Personify</div>
+            <div class="rail-sub" id="rail-vault-name">personal</div>
+          </div>
+          <span class="rail-vault-chev" aria-hidden="true">⌄</span>
+        </button>
+
+        <div id="vault-menu" class="vault-menu" hidden>
+          <div class="vault-menu-label">Switch vault</div>
+          <div id="vault-menu-list"></div>
+          <div class="vault-menu-sep"></div>
+          <button class="vault-menu-item vault-menu-new" id="vault-new" type="button">
+            <span class="rail-icon">+</span><span>New vault…</span>
+          </button>
+        </div>
+
+        <button class="rail-primary" id="rail-new">
+          <span class="rail-primary-icon">+</span>
+          <span class="rail-primary-label">New search</span>
+          <span class="kbd">⌘K</span>
+        </button>
+
+        <nav class="rail-nav">
+          <button class="rail-link" data-route="search">
+            <span class="rail-icon">⌕</span><span>Search</span>
+          </button>
+          <button class="rail-link" data-route="timeline">
+            <span class="rail-icon">⌚</span><span>Timeline</span>
+          </button>
+          <button class="rail-link" data-route="items">
+            <span class="rail-icon">≡</span><span>Items</span>
+          </button>
+        </nav>
+
+        <section class="rail-section">
+          <div class="rail-section-label">Vault</div>
+          <button class="rail-link" data-route="dashboard">
+            <span class="rail-icon">▤</span><span>Dashboard</span>
+          </button>
+          <button class="rail-link" data-route="exports">
+            <span class="rail-icon">▢</span><span>Exports</span>
+          </button>
+          <button class="rail-link" data-route="add">
+            <span class="rail-icon">+</span><span>Add export</span>
+          </button>
+          <button class="rail-link" data-route="repos">
+            <span class="rail-icon">⌘</span><span>Repo intake</span>
+          </button>
+          <button class="rail-link" data-route="embed">
+            <span class="rail-icon">∿</span><span>Embeddings</span>
+          </button>
+        </section>
+
+        <section class="rail-section" id="rail-sources">
+          <div class="rail-section-label">Sources</div>
+          <!-- populated dynamically -->
+        </section>
+
+        <footer class="rail-foot">
+          <div class="rail-foot-row">
+            <a href="/docs" target="_blank" rel="noopener">API docs ↗</a>
+            <span id="health-pill" class="pill pill-muted">checking…</span>
+          </div>
+        </footer>
+      </aside>
+
+      <main class="stage">
+        <header class="stage-head">
+          <div class="crumb">
+            <span class="crumb-root">personify</span>
+            <span class="crumb-sep">/</span>
+            <span class="crumb-leaf" id="crumb">Dashboard</span>
+          </div>
+          <div class="stage-tools">
+            <span class="kbd" title="Search">⌘K</span>
+          </div>
+        </header>
+
+        <div id="toast-host" class="toast-host"></div>
+        <section id="view" class="stage-body"></section>
+      </main>
+
+      <aside id="detail" class="detail" hidden>
+        <div class="detail-head">
+          <div class="detail-title" id="detail-title">Item</div>
+          <button id="detail-close" class="icon-btn" aria-label="Close">✕</button>
+        </div>
+        <div id="detail-body" class="detail-body"></div>
+      </aside>
+
+      <div id="modal-host" class="modal-host" hidden>
+        <div class="modal-backdrop" id="modal-backdrop"></div>
+        <div class="modal-card" role="dialog" aria-labelledby="modal-title">
+          <div class="modal-head">
+            <div class="modal-title" id="modal-title">New vault</div>
+            <button class="icon-btn" id="modal-close" aria-label="Close">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="field">
+              <label for="vault-name-input">Name</label>
+              <input id="vault-name-input" type="text" placeholder="e.g. work, screenshots, code-corpus" autocomplete="off" />
+              <div class="hint">
+                Stored as <span class="mono" id="vault-name-preview">—</span>
+                · DB <span class="mono" id="vault-db-preview">—</span>
+              </div>
+            </div>
+            <label class="checkbox-row">
+              <input type="checkbox" id="vault-activate" checked />
+              Switch to it after creating
+            </label>
+            <div id="vault-create-result" style="margin-top:12px"></div>
+          </div>
+          <div class="modal-foot">
+            <button class="btn btn-ghost" id="vault-cancel">Cancel</button>
+            <button class="btn btn-primary" id="vault-create-go">Create vault</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

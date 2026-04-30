@@ -46,7 +46,14 @@ class RawExport(SQLModel, table=True):
     received_at: datetime = Field(default_factory=_utcnow)
     notes: Optional[str] = Field(default=None, sa_column=Column(Text))
 
-    __table_args__ = (UniqueConstraint("sha256", name="uq_raw_exports_sha256"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "source_slug",
+            "account_handle",
+            "sha256",
+            name="uq_raw_exports_source_account_sha256",
+        ),
+    )
 
 
 class IngestionRun(SQLModel, table=True):
@@ -80,8 +87,18 @@ class Item(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow)
 
     __table_args__ = (
-        UniqueConstraint("source_slug", "native_id", name="uq_items_source_native"),
-        UniqueConstraint("source_slug", "content_hash", name="uq_items_source_hash"),
+        UniqueConstraint(
+            "source_slug",
+            "account_handle",
+            "native_id",
+            name="uq_items_source_account_native",
+        ),
+        UniqueConstraint(
+            "source_slug",
+            "account_handle",
+            "content_hash",
+            name="uq_items_source_account_hash",
+        ),
         Index("ix_items_source_ts", "source_slug", "ts"),
     )
 

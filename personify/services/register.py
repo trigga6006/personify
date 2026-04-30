@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from sqlmodel import select
 
@@ -16,6 +16,7 @@ def register_export(
     path: Path,
     account_handle: str,
     notes: Optional[str] = None,
+    manifest_extra: Optional[dict[str, Any]] = None,
 ) -> RawExport:
     """Copy an export into vault/raw and create a RawExport row.
 
@@ -34,7 +35,13 @@ def register_export(
             s.add(Account(handle=account_handle))
         s.flush()
 
-        existing = s.exec(select(RawExport).where(RawExport.sha256 == info["sha256"])).first()
+        existing = s.exec(
+            select(RawExport).where(
+                RawExport.source_slug == source_slug,
+                RawExport.account_handle == account_handle,
+                RawExport.sha256 == info["sha256"],
+            )
+        ).first()
         if existing:
             return existing
 
@@ -49,9 +56,7 @@ def register_export(
         )
         s.add(export)
         s.flush()
-        write_manifest(
-            export.id,
-            {
+        manifest = {
                 "raw_export_id": export.id,
                 "source": source_slug,
                 "account": account_handle,
@@ -59,7 +64,11 @@ def register_export(
                 "size_bytes": info["size_bytes"],
                 "original_path": info["original_path"],
                 "stored_path": info["stored_path"],
-            },
-        )
+        }
+        if notes:
+            manifest["notes"] = notes
+        if manifest_extra:
+            manifest.update(manifest_extra)
+        write_manifest(export.id, manifest)
         s.refresh(export)
         return export

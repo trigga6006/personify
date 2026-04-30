@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
@@ -12,8 +13,11 @@ from personify.db import get_session
 from personify.models import Item, ItemMedia, ItemText, Source, Tag
 from personify.services.search import semantic_search, text_search
 from personify.services.stats import collect_stats
+from personify.web.routes import STATIC_DIR, router as web_router
 
 app = FastAPI(title="Personify Vault API", version=__version__)
+app.include_router(web_router)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 class SearchRequest(BaseModel):

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from personify.config import settings
-from personify.util.hashing import sha256_file
+from personify.util.hashing import sha256_directory, sha256_file
 
 
 def ensure_vault_layout() -> None:
@@ -22,13 +22,16 @@ def store_raw_export(src: Path, source_slug: str, account_handle: str) -> dict:
     if not src.exists():
         raise FileNotFoundError(src)
 
-    digest, size = sha256_file(src)
+    digest, size = sha256_directory(src) if src.is_dir() else sha256_file(src)
     safe_account = account_handle.replace("/", "_").replace("\\", "_")
     dest_dir = settings.raw_dir / source_slug / safe_account
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / f"{digest[:12]}__{src.name}"
     if not dest.exists():
-        shutil.copy2(src, dest)
+        if src.is_dir():
+            shutil.copytree(src, dest)
+        else:
+            shutil.copy2(src, dest)
     return {
         "sha256": digest,
         "size_bytes": size,

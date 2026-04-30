@@ -3,6 +3,9 @@ __pycache__/
 *.pyc
 .env
 vault/
+vaults/
+repo-intake/
+*-intake/
 *.egg-info/
 dist/
 build/

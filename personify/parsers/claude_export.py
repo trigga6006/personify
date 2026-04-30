@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from personify.parsers._content import extract_message_text
-from personify.parsers._zip import find_first, unzip_or_passthrough
+from personify.parsers._zip import find_first, is_supported_archive, unzip_or_passthrough
 from personify.parsers.base import ParsedItem, ParserBase
 
 
@@ -30,7 +30,7 @@ class ClaudeParser(ParserBase):
 
     @classmethod
     def detect(cls, path: Path) -> bool:
-        if path.is_file() and path.suffix.lower() == ".zip":
+        if path.is_file() and is_supported_archive(path):
             return True
         if path.is_dir() and (path / "conversations.json").exists():
             return True

@@ -6,7 +6,7 @@ from sqlalchemy import func, text
 from sqlmodel import select
 
 from personify.db import session_scope
-from personify.models import Embedding, Item, ItemText
+from personify.models import Item, ItemText
 
 
 def text_search(query: str, limit: int = 25, source: str | None = None) -> list[dict[str, Any]]:
