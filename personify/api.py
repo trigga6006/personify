@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
@@ -34,6 +35,11 @@ from personify.services.graph import (
 from personify.services.items import (
     get_item_full as _get_item_full_service,
     list_timeline as _list_timeline_service,
+)
+from personify.services.media import (
+    MediaNotFound,
+    MediaUnavailable,
+    resolve_media,
 )
 from personify.services.search import semantic_search, text_search
 from personify.services.stats import collect_stats
@@ -138,6 +144,40 @@ def get_item(item_id: int) -> dict[str, Any]:
     if payload is None:
         raise HTTPException(status_code=404, detail="not found")
     return payload
+
+
+@app.get("/items/{item_id}/media/{media_id}")
+def get_item_media(item_id: int, media_id: int, download: bool = False) -> FileResponse:
+    """Stream one ItemMedia attachment off disk.
+
+    The vault ingests email attachments, Discord images, etc. into rows on
+    `item_media` but until now never served them back — the data went in
+    but couldn't come out. This endpoint closes that loop.
+
+    `download=1` forces `Content-Disposition: attachment` so the browser
+    saves rather than tries to render. Default behavior lets the browser
+    decide based on MIME type (images render inline; binaries download).
+
+    Path-traversal guard lives in `services.media.resolve_media`.
+    """
+    try:
+        resolved = resolve_media(item_id, media_id)
+    except MediaNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except MediaUnavailable as e:
+        raise HTTPException(status_code=410, detail=str(e)) from e
+
+    headers: dict[str, str] = {}
+    if download:
+        headers["Content-Disposition"] = (
+            f'attachment; filename="{resolved.suggested_filename}"'
+        )
+    return FileResponse(
+        path=str(resolved.absolute_path),
+        media_type=resolved.mime or "application/octet-stream",
+        filename=resolved.suggested_filename if download else None,
+        headers=headers,
+    )
 
 
 @app.get("/timeline")

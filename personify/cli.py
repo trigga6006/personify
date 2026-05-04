@@ -430,6 +430,105 @@ def dev(
         _stop_processes(procs)
 
 
+@app.command("export")
+def export(
+    out: Path = typer.Option(..., "--out", "-o", help="Output path (.tar.gz)"),
+) -> None:
+    """Write a portable backup of the active vault to a single tarball.
+
+    The bundle contains the database (one JSON file per table) plus the
+    raw, staging, normalized, and manifest directories. Embeddings are
+    intentionally excluded — re-run ``vault embed`` after restoring.
+    """
+    from personify.services.backup import export_vault, BackupError
+
+    try:
+        result = export_vault(out)
+    except BackupError as e:
+        console.print(f"[red]export failed:[/red] {e}")
+        raise typer.Exit(1)
+
+    console.print(
+        f"[green]wrote[/green] {result.bundle_path}\n"
+        f"  tables={len(result.tables_written)} rows={result.rows_written} "
+        f"files={result.files_written} bytes={result.bytes_written}"
+    )
+
+
+@app.command("restore")
+def restore(
+    bundle: Path = typer.Argument(..., exists=True, readable=True, help="Bundle path"),
+    into: str = typer.Option(
+        ...,
+        "--into",
+        "-i",
+        help="Target vault name. Must be unused (refuses to overwrite).",
+    ),
+) -> None:
+    """Restore a bundle into a NEW vault profile.
+
+    Refuses if the target vault directory already exists or its database
+    already has items, so a typo can never overwrite the active vault.
+    """
+    from personify.services.backup import restore_vault, BackupError
+
+    try:
+        result = restore_vault(bundle, into)
+    except BackupError as e:
+        console.print(f"[red]restore failed:[/red] {e}")
+        raise typer.Exit(1)
+
+    console.print(
+        f"[green]restored[/green] vault={result.vault_name}\n"
+        f"  tables={len(result.tables_restored)} rows={result.rows_restored} "
+        f"files={result.files_restored}"
+    )
+    console.print(
+        "[dim]Tip: re-run `vault --vault "
+        f"{result.vault_name} embed` if you had embeddings.[/dim]"
+    )
+
+
+@app.command("media")
+def media(
+    media_id: int = typer.Argument(..., help="ItemMedia row id"),
+    item_id: int = typer.Option(..., "--item-id", "-i", help="Owning item id"),
+    out: Optional[Path] = typer.Option(
+        None,
+        "--out",
+        "-o",
+        help="Output path. Default: ./<suggested_filename> in cwd.",
+    ),
+) -> None:
+    """Dump one ingested attachment to disk.
+
+    Mirrors the ``GET /items/{id}/media/{mid}`` HTTP route — same
+    path-traversal guard via ``services.media.resolve_media``.
+    """
+    from personify.services.media import (
+        MediaNotFound,
+        MediaUnavailable,
+        resolve_media,
+    )
+
+    try:
+        resolved = resolve_media(item_id, media_id)
+    except MediaNotFound as e:
+        console.print(f"[red]not found:[/red] {e}")
+        raise typer.Exit(1)
+    except MediaUnavailable as e:
+        console.print(f"[red]unavailable:[/red] {e}")
+        raise typer.Exit(1)
+
+    dest = out if out is not None else Path.cwd() / resolved.suggested_filename
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(resolved.absolute_path, dest)
+    console.print(
+        f"[green]wrote[/green] {dest} "
+        f"({resolved.size_bytes or 'unknown'} bytes, {resolved.mime or 'unknown mime'})"
+    )
+
+
 @app.command("mcp")
 def mcp_serve() -> None:
     """Run the MCP server over stdio (for Claude Desktop / agents).
