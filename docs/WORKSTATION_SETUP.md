@@ -49,13 +49,14 @@ to `vault/normalized/`; ingest logs land in `vault/logs/`.
 ## API Smoke Check
 
 ```powershell
-.\.venv\Scripts\vault serve
+.\.venv\Scripts\vault dev
 ```
 
 Then open:
 
-- `http://127.0.0.1:8765/health`
-- `http://127.0.0.1:8765/docs`
+- `http://localhost:18766`
+- `http://localhost:18765/health`
+- `http://localhost:18765/docs`
 
 ## Embeddings
 

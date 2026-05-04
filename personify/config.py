@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     vault_name: str = "personal"
     vaults_dir: Path = Path("./vaults")
     api_host: str = "127.0.0.1"
-    api_port: int = 8765
+    api_port: int = 18765
     embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     embed_dim: int = 384
 

@@ -1,8 +1,16 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import shutil
+import socket
+import subprocess
+import sys
+import time
 from typing import Optional
+from urllib.error import URLError
+from urllib.request import urlopen
 
 import typer
 from rich.console import Console
@@ -13,6 +21,7 @@ from personify.db import init_db, reset_engine
 from personify.parsers import PARSERS
 from personify.services.embed import embed_pending
 from personify.services.ingest import ingest_all_pending, ingest_export, ingest_source, reset_export
+from personify.services.pipeline import latest_pipeline_summary, run_pipeline
 from personify.services.register import register_export
 from personify.services.repos import (
     register_repo_intake,
@@ -26,6 +35,61 @@ from personify.util.vault import ensure_vault_layout
 
 app = typer.Typer(help="Personify — local-first personal data vault.", no_args_is_help=True)
 console = Console()
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _stop_processes(procs: list[tuple[str, subprocess.Popen]]) -> None:
+    for _name, proc in procs:
+        if proc.poll() is None:
+            proc.terminate()
+    for name, proc in procs:
+        if proc.poll() is not None:
+            continue
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            console.print(f"[yellow]forcing {name} to stop[/yellow]")
+            proc.kill()
+            proc.wait(timeout=5)
+
+
+def _is_port_open(host: str, port: int) -> bool:
+    """Return true if a local TCP port is reachable on IPv4 or IPv6 localhost."""
+    if host in {"localhost", "127.0.0.1", "0.0.0.0", "::1", "::"}:
+        candidates = ("127.0.0.1", "::1", "localhost")
+    else:
+        candidates = (host,)
+
+    for candidate in candidates:
+        try:
+            addresses = socket.getaddrinfo(candidate, port, type=socket.SOCK_STREAM)
+        except socket.gaierror:
+            continue
+        for family, socktype, proto, _canonname, sockaddr in addresses:
+            with socket.socket(family, socktype, proto) as sock:
+                sock.settimeout(0.2)
+                if sock.connect_ex(sockaddr) == 0:
+                    return True
+    return False
+
+
+def _display_host(host: str) -> str:
+    return "localhost" if host in {"127.0.0.1", "0.0.0.0"} else host
+
+
+def _health_url(host: str, port: int) -> str:
+    return f"http://{_display_host(host)}:{port}/health"
+
+
+def _backend_health_ok(host: str, port: int) -> bool:
+    try:
+        with urlopen(_health_url(host, port), timeout=1) as res:
+            return 200 <= res.status < 300
+    except (OSError, URLError):
+        return False
 
 
 @app.callback()
@@ -149,10 +213,28 @@ def ingest(
         "--replace",
         help="With --export-id, delete derived rows for that export before ingesting",
     ),
+    with_embeddings: bool = typer.Option(
+        False,
+        "--with-embeddings",
+        help="After ingest, embed any text items belonging to this export.",
+    ),
+    with_graph: bool = typer.Option(
+        False,
+        "--with-graph",
+        help="After ingest, run heuristic graph extraction over this export's items.",
+    ),
 ) -> None:
-    """Ingest one export by id, or all exports for a source."""
+    """Ingest one export by id, or all exports for a source.
+
+    Embeddings and graph extraction are optional follow-on stages and only
+    apply when a single --export-id is given.
+    """
     if replace and export_id is None:
         raise typer.BadParameter("--replace requires --export-id.")
+    if (with_embeddings or with_graph) and export_id is None:
+        raise typer.BadParameter(
+            "--with-embeddings/--with-graph require --export-id."
+        )
     if all_pending:
         if replace:
             raise typer.BadParameter("--replace cannot be used with --all-pending.")
@@ -175,6 +257,19 @@ def ingest(
                 f"[yellow]reset[/yellow] export={export_id} "
                 f"items={deleted['items']} runs={deleted['runs']}"
             )
+        if with_embeddings or with_graph:
+            result = run_pipeline(
+                export_id,
+                with_embeddings=with_embeddings,
+                with_graph=with_graph,
+            )
+            for stage in result.stages:
+                console.print(
+                    f"  stage=[bold]{stage.stage}[/bold] status={stage.status} "
+                    f"items_processed={stage.items_processed}"
+                    + (f" error={stage.error}" if stage.error else "")
+                )
+            return
         run = ingest_export(export_id)
         console.print(
             f"[green]run[/green] id={run.id} status={run.status} "
@@ -190,6 +285,14 @@ def ingest(
             f"  run id={run.id} export={run.raw_export_id} status={run.status} "
             f"seen={run.items_seen} inserted={run.items_inserted}"
         )
+
+
+@app.command("pipeline-status")
+def pipeline_status(
+    export_id: int = typer.Option(..., "--export-id", "-e"),
+) -> None:
+    """Show the latest pipeline stage statuses for one export."""
+    console.print_json(json.dumps(latest_pipeline_summary(export_id), default=str))
 
 
 @app.command("embed")
@@ -236,27 +339,112 @@ def stats() -> None:
     console.print_json(json.dumps(data, default=str))
 
 
-@app.command()
-def serve(
-    host: Optional[str] = typer.Option(None, "--host"),
-    port: Optional[int] = typer.Option(None, "--port"),
+@app.command("dev")
+def dev(
+    host: Optional[str] = typer.Option(None, "--host", help="FastAPI host."),
+    port: int = typer.Option(18765, "--port", help="FastAPI port."),
+    frontend_port: int = typer.Option(18766, "--frontend-port", help="Vite dev server port."),
 ) -> None:
-    """Run the FastAPI app via uvicorn (UI at /ui, API docs at /docs)."""
-    import uvicorn
+    """Start Docker/Postgres, FastAPI, and the Vite frontend for local development.
+
+    MCP stays separate: use `vault mcp` as the second command/Claude Desktop
+    entrypoint so stdio remains reserved for JSON-RPC framing.
+    """
+    root = _repo_root()
+    frontend_dir = root / "frontend"
+    if not frontend_dir.is_dir():
+        raise typer.BadParameter(f"frontend directory not found: {frontend_dir}")
 
     h = host or settings.api_host
-    p = port or settings.api_port
-    base = f"http://{h}:{p}"
-    console.print(f"[bold]VaultUI[/bold]      {base}/ui")
-    console.print(f"[dim]API docs[/dim]    {base}/docs")
-    console.print(f"[dim]Health[/dim]      {base}/health")
-    console.print()
-    uvicorn.run(
-        "personify.api:app",
-        host=h,
-        port=p,
-        reload=False,
+    p = port
+    display_host = _display_host(h)
+
+    console.print("[bold]Docker[/bold]      docker compose up -d")
+    subprocess.run(["docker", "compose", "up", "-d"], cwd=root, check=True)
+
+    pnpm = shutil.which("pnpm")
+    if pnpm is None:
+        raise typer.BadParameter("pnpm not found on PATH; install pnpm or run Vite manually.")
+
+    backend_running = _is_port_open(h, p) and _backend_health_ok(h, p)
+    frontend_running = _is_port_open("127.0.0.1", frontend_port) or _is_port_open(
+        "localhost", frontend_port
     )
+
+    backend_cmd = [
+        sys.executable,
+        "-m",
+        "uvicorn",
+        "personify.api:app",
+        "--host",
+        h,
+        "--port",
+        str(p),
+        "--reload",
+    ]
+    frontend_cmd = [pnpm, "exec", "vite", "--host", "localhost", "--port", str(frontend_port)]
+    frontend_env = os.environ.copy()
+    frontend_env["PERSONIFY_DEV_API_ORIGIN"] = f"http://{display_host}:{p}"
+    frontend_env["PERSONIFY_DEV_FRONTEND_PORT"] = str(frontend_port)
+
+    console.print(
+        f"[bold]FastAPI[/bold]     http://{display_host}:{p}"
+        + (" [dim](already running)[/dim]" if backend_running else "")
+    )
+    console.print(
+        f"[bold]Vite[/bold]        http://localhost:{frontend_port}"
+        + (" [dim](already running)[/dim]" if frontend_running else "")
+    )
+    console.print("[dim]MCP stays separate: run `vault mcp` or let Claude Desktop launch it.[/dim]")
+    console.print()
+
+    procs: list[tuple[str, subprocess.Popen]] = []
+    try:
+        if not backend_running:
+            procs.append(("fastapi", subprocess.Popen(backend_cmd, cwd=root)))
+        if not frontend_running:
+            procs.append(("vite", subprocess.Popen(frontend_cmd, cwd=frontend_dir, env=frontend_env)))
+        last_backend_check = 0.0
+        while True:
+            for name, proc in procs:
+                code = proc.poll()
+                if code is not None:
+                    console.print(f"[yellow]{name} exited with code {code}[/yellow]")
+                    raise typer.Exit(code)
+            now = time.monotonic()
+            if now - last_backend_check > 2:
+                last_backend_check = now
+                if not _backend_health_ok(h, p):
+                    if _is_port_open(h, p):
+                        console.print(
+                            f"[red]FastAPI health check failed at {_health_url(h, p)}[/red]"
+                        )
+                        raise typer.Exit(1)
+                    console.print("[yellow]FastAPI stopped; restarting it[/yellow]")
+                    proc = subprocess.Popen(backend_cmd, cwd=root)
+                    procs.append(("fastapi", proc))
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]stopping dev servers[/yellow]")
+    finally:
+        _stop_processes(procs)
+
+
+@app.command("mcp")
+def mcp_serve() -> None:
+    """Run the MCP server over stdio (for Claude Desktop / agents).
+
+    The vault is selected via the global ``--vault`` flag (e.g.
+    ``vault --vault code-corpus mcp``) or the ``PERSONIFY_VAULT_NAME`` env var.
+
+    CRITICAL: this command MUST NOT print anything to stdout — the MCP stdio
+    transport uses stdout for JSON-RPC framing. The entrypoint configures
+    logging to stderr before any service module loads. Don't add `console.print`
+    or any other stdout writer here.
+    """
+    from personify.mcp.__main__ import main as mcp_main
+
+    mcp_main()
 
 
 if __name__ == "__main__":

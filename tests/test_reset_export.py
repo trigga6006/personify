@@ -32,5 +32,13 @@ def test_reset_export_removes_derived_rows(
 
     deleted = reset_export(raw.id)
 
-    assert deleted == {"items": 2, "runs": 1}
+    assert deleted == {
+        "items": 2,
+        "runs": 1,
+        "pipeline_stages": 0,
+        "entity_evidence": 0,
+        "relationship_evidence": 0,
+        "entities_pruned": 0,
+        "relationships_pruned": 0,
+    }
     assert collect_stats()["items"] == 0

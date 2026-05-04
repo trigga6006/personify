@@ -11,6 +11,8 @@ queryable schema.
 - **ORM**: SQLModel
 - **Vault**: local filesystem (`raw/`, `staging/`, `normalized/`, `manifests/`, `logs/`)
 - **Parsers**: adapter pattern, one per source
+- **Agent surface**: MCP server (`vault mcp`) — read-only tools + resources for
+  any MCP-compatible agent. See [docs/MCP_GUIDE.md](docs/MCP_GUIDE.md).
 
 ## Filesystem Layout
 
@@ -107,6 +109,7 @@ setup and recovery notes.
 | discord | Discord data package ZIP   |
 | notion  | Notion Markdown/CSV export |
 | github  | Local repo folder or GitHub `.tar.gz`/`.tgz` archive |
+| twitter | X (Twitter) "Download an archive of your data" ZIP — registers as slug `twitter`, displays as **X (Twitter)** |
 | files   | Generic md/txt/pdf/json/csv folder or archive |
 
 ## CLI
@@ -123,6 +126,8 @@ setup and recovery notes.
 | `vault embed --limit N`                            | compute missing embeddings    |
 | `vault search "query"`                             | full-text search              |
 | `vault stats`                                      | counts per source / account   |
+| `vault dev`                                        | start Docker, FastAPI, and Vite for local dev |
+| `vault mcp`                                        | run MCP server over stdio (agent integration) |
 
 ## API
 
@@ -135,6 +140,33 @@ setup and recovery notes.
 | POST   | `/semantic-search` | pgvector cosine search   |
 | GET    | `/items/{id}`      | full item                |
 | GET    | `/timeline`        | items by time window     |
+
+## Agent surface (MCP)
+
+The vault is also exposed as an [MCP server](https://modelcontextprotocol.io)
+so any MCP-compatible agent (Claude Desktop, Claude Code, Cursor, …) can
+search, retrieve, and traverse the graph as first-class tool calls — no
+hand-crafted REST queries required.
+
+```bash
+vault dev                              # Docker/Postgres + FastAPI :18765 + Vite :18766
+vault mcp                              # default vault, stdio
+vault --vault code-corpus mcp          # different vault
+PERSONIFY_VAULT_NAME=foo vault mcp     # via env (Claude Desktop config style)
+```
+
+`vault dev` is for the app/UI stack. MCP intentionally runs as a second
+command (or is launched by Claude Desktop) so stdio remains clean for JSON-RPC.
+
+Read-only by design: 13 tools (`search`, `semantic_search`, `timeline`,
+`get_item`, `recent_items`, `recent_runs`, `list_sources`, `list_accounts`,
+`stats`, `graph_search_entities`, `get_entity`, `entity_neighborhood`,
+`entity_context`) and 6 resource URIs (`vault://stats`, `vault://recent`,
+`vault://sources`, `vault://item/{item_id}`, `vault://entity/{entity_id}`,
+`vault://export/{export_id}`).
+
+Setup, Claude Desktop config, full tool reference, and privacy notes:
+[docs/MCP_GUIDE.md](docs/MCP_GUIDE.md).
 
 ## Adding A New Parser
 

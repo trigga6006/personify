@@ -1,0 +1,6 @@
+/* The legacy app.css is the single source of truth for the design tokens
+ * (palette, type, radii, motion). refinements.css layers on patterns the
+ * new shell needs (app grid, slide-in panel, polished modals, skeletons,
+ * stat cards, bar rows, segmented control, toolbar, etc.). */
+@import "../../../personify/web/static/app.css";
+@import "./refinements.css";

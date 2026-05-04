@@ -1,13 +1,22 @@
 from contextlib import contextmanager
 from typing import Iterator
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine, make_url
 from sqlmodel import Session, SQLModel, create_engine, select
 
 import personify.config as config
 
 engine: Engine | None = None
+
+# Columns added after the initial schema. SQLAlchemy's create_all is idempotent
+# at the table level but never alters existing tables, so we apply these by hand
+# inside init_db(). Each tuple is (table, column, full ALTER DDL fragment) and
+# is skipped when the column already exists.
+_COLUMN_ADDITIONS: list[tuple[str, str, str]] = [
+    ("entities", "origin", "VARCHAR(16) NOT NULL DEFAULT 'manual'"),
+    ("relationships", "origin", "VARCHAR(16) NOT NULL DEFAULT 'manual'"),
+]
 
 
 def get_engine() -> Engine:
@@ -51,7 +60,9 @@ def _ensure_postgres_database() -> None:
 
 
 def init_db() -> None:
-    """Create the pgvector extension and all tables."""
+    """Create the pgvector extension and all tables, then apply column-level
+    additions for any pre-existing tables (create_all only handles new tables).
+    """
     _ensure_postgres_database()
     db_engine = get_engine()
     if db_engine.dialect.name == "postgresql":
@@ -61,7 +72,27 @@ def init_db() -> None:
     from personify import models  # noqa: F401
 
     SQLModel.metadata.create_all(db_engine)
+    _apply_column_additions(db_engine)
     seed_sources()
+
+
+def _apply_column_additions(db_engine: Engine) -> None:
+    """Idempotently ALTER TABLE ADD COLUMN for fields added in later releases.
+
+    Works on SQLite and Postgres: both support `ALTER TABLE … ADD COLUMN …
+    DEFAULT '…'`, and reflection lets us skip columns that already exist.
+    """
+    inspector = inspect(db_engine)
+    existing_tables = set(inspector.get_table_names())
+    for table, column, ddl in _COLUMN_ADDITIONS:
+        if table not in existing_tables:
+            # Table will have been (re)created by create_all with the new column.
+            continue
+        existing_columns = {c["name"] for c in inspector.get_columns(table)}
+        if column in existing_columns:
+            continue
+        with db_engine.begin() as conn:
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
 
 
 def seed_sources() -> None:
@@ -73,7 +104,7 @@ def seed_sources() -> None:
         existing = {x.slug for x in s.exec(select(Source)).all()}
         for slug in sorted(PARSERS):
             if slug not in existing:
-                s.add(Source(slug=slug, label=slug.title()))
+                s.add(Source(slug=slug, label=PARSERS[slug].display_label()))
         s.commit()
 
 

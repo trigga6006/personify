@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="Personify">
+  <!-- Folder: front face + tab on the upper-left, single closed path -->
+  <path d="M5 10.5a1.8 1.8 0 0 1 1.8 -1.8h5l2 2h10.4a1.8 1.8 0 0 1 1.8 1.8v9.4a1.8 1.8 0 0 1 -1.8 1.8h-17.4a1.8 1.8 0 0 1 -1.8 -1.8z"
+        stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Connectors first so the filled nodes overlay them cleanly at the joints -->
+  <path d="M14 18 L19.2 15.1" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round"/>
+  <path d="M14 18 L19.2 20.9" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round"/>
+  <!-- Three nodes: one left, two right (top + bottom) — the share icon -->
+  <circle cx="13" cy="18" r="1.9" fill="#ffffff"/>
+  <circle cx="20.4" cy="14.4" r="1.9" fill="#ffffff"/>
+  <circle cx="20.4" cy="21.6" r="1.9" fill="#ffffff"/>
+</svg>

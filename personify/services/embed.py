@@ -121,9 +121,40 @@ def embed_stats() -> dict[str, Any]:
     }
 
 
+def _embed_rows(s, rows: list) -> int:
+    """Embed (item, text) rows that don't yet have embeddings. Returns chunk count."""
+    if not rows:
+        return 0
+    chunks_per_item: list[tuple[int, list[str]]] = []
+    all_chunks: list[str] = []
+    for item, text in rows:
+        cs = _chunk(text.body)
+        chunks_per_item.append((item.id, cs))
+        all_chunks.extend(cs)
+    if not all_chunks:
+        return 0
+    vecs = embed_texts(all_chunks)
+    cursor = 0
+    inserted = 0
+    for item_id, cs in chunks_per_item:
+        for idx, c in enumerate(cs):
+            v = vecs[cursor]
+            cursor += 1
+            s.add(
+                Embedding(
+                    item_id=item_id,
+                    model=settings.embed_model,
+                    chunk_idx=idx,
+                    chunk_text=c,
+                    vector=v,
+                )
+            )
+            inserted += 1
+    return inserted
+
+
 def embed_pending(limit: int = 500) -> int:
     """Compute embeddings for items that don't yet have any. Returns count."""
-    inserted = 0
     with session_scope() as s:
         stmt = (
             select(Item, ItemText)
@@ -133,30 +164,22 @@ def embed_pending(limit: int = 500) -> int:
             .limit(limit)
         )
         rows = s.exec(stmt).all()
-        if not rows:
-            return 0
-        chunks_per_item: list[tuple[int, list[str]]] = []
-        all_chunks: list[str] = []
-        for item, text in rows:
-            cs = _chunk(text.body)
-            chunks_per_item.append((item.id, cs))
-            all_chunks.extend(cs)
-        if not all_chunks:
-            return 0
-        vecs = embed_texts(all_chunks)
-        cursor = 0
-        for item_id, cs in chunks_per_item:
-            for idx, c in enumerate(cs):
-                v = vecs[cursor]
-                cursor += 1
-                s.add(
-                    Embedding(
-                        item_id=item_id,
-                        model=settings.embed_model,
-                        chunk_idx=idx,
-                        chunk_text=c,
-                        vector=v,
-                    )
-                )
-                inserted += 1
-    return inserted
+        return _embed_rows(s, list(rows))
+
+
+def embed_export(raw_export_id: int) -> int:
+    """Embed any unembedded text items belonging to one raw export.
+
+    Used by the pipeline so an export's downstream stage only touches its own
+    items rather than every pending item in the vault.
+    """
+    with session_scope() as s:
+        stmt = (
+            select(Item, ItemText)
+            .join(ItemText, ItemText.item_id == Item.id)
+            .outerjoin(Embedding, Embedding.item_id == Item.id)
+            .where(Item.raw_export_id == raw_export_id)
+            .where(Embedding.id.is_(None))
+        )
+        rows = s.exec(stmt).all()
+        return _embed_rows(s, list(rows))

@@ -91,8 +91,8 @@ PERSONIFY_DB_URL=postgresql+psycopg://personify:personify@localhost:5544/personi
 PERSONIFY_VAULT_DIR=./vault
 PERSONIFY_VAULT_NAME=personal
 PERSONIFY_VAULTS_DIR=./vaults
-PERSONIFY_API_HOST=127.0.0.1
-PERSONIFY_API_PORT=8765
+PERSONIFY_API_HOST=localhost
+PERSONIFY_API_PORT=18765
 PERSONIFY_EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2
 PERSONIFY_EMBED_DIM=384
 ```
@@ -372,20 +372,20 @@ an export deletes derived embeddings for that export so they can be rebuilt.
 Run:
 
 ```powershell
-.\.venv\Scripts\vault serve
+.\.venv\Scripts\vault dev
 ```
 
 Open:
 
 ```text
-http://127.0.0.1:8765/ui
+http://localhost:18766
 ```
 
 Useful endpoints:
 
 ```text
-http://127.0.0.1:8765/health
-http://127.0.0.1:8765/docs
+http://localhost:18765/health
+http://localhost:18765/docs
 ```
 
 The UI can switch vaults through the backend:
@@ -433,7 +433,7 @@ Start:
 docker compose up -d
 .\.venv\Scripts\vault init
 .\.venv\Scripts\vault --vault code-corpus init
-.\.venv\Scripts\vault serve
+.\.venv\Scripts\vault dev
 ```
 
 Stop:
@@ -568,7 +568,7 @@ Before telling the user setup is done:
 - `vault --vault code-corpus stats` works.
 - `pytest` passes.
 - `ruff check .` passes.
-- UI starts at `http://127.0.0.1:8765/ui`.
+- UI starts at `http://localhost:18766`.
 - User knows where to place downloaded exports.
 - User knows where to clone code-corpus repos.
 - User knows temporary intake folders can be deleted only after successful

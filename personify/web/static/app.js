@@ -398,6 +398,10 @@ async function refreshLookups() {
   } catch (e) {
     /* ignore — pages will surface their own errors */
   }
+  // Sidebar Sources section is derived from state.sources + state.itemCounts;
+  // re-render here so callers (post-ingest, post-reset, etc.) don't have to
+  // remember to call renderRailSources() separately.
+  renderRailSources();
 }
 
 // ---------- shared ----------
@@ -721,10 +725,49 @@ async function renderItems() {
 }
 
 // ---------- Exports ----------
+// Persisted across renders so the user's last toggle choice sticks.
+const pipelinePrefs = {
+  with_embeddings: false,
+  with_graph: false,
+};
+
+function pipelinePrefsToast() {
+  const parts = [];
+  if (pipelinePrefs.with_embeddings) parts.push("embeddings");
+  if (pipelinePrefs.with_graph) parts.push("graph");
+  return parts.length ? ` (+ ${parts.join(", ")})` : "";
+}
+
+function stagePill(stage) {
+  if (!stage) return `<span class="pill pill-muted">—</span>`;
+  const cls =
+    stage.status === "done"
+      ? "pill-ok"
+      : stage.status === "running"
+        ? "pill-info"
+        : stage.status === "error"
+          ? "pill-err"
+          : stage.status === "skipped"
+            ? "pill-muted"
+            : "pill-muted";
+  return `<span class="pill ${cls}" title="${escapeHtml(stage.error || "")}">${escapeHtml(stage.status)}</span>`;
+}
+
+function pipelineStagesCell(row) {
+  const stages = row.pipeline_stages || {};
+  const cell = (label, stage) =>
+    `<div class="stage-chip"><span class="stage-chip-label">${label}</span>${stagePill(stage)}</div>`;
+  return `<div class="stage-strip">
+    ${cell("ingest", stages.ingest)}
+    ${cell("embed", stages.embed)}
+    ${cell("graph", stages.graph)}
+  </div>`;
+}
+
 async function renderExports() {
   setView(`
     <h1>Exports</h1>
-    <div class="sub">Raw exports registered in the vault. Each can be ingested, reset, or replaced.</div>
+    <div class="sub">Raw exports registered in the vault. Standard ingest is always run; embeddings and graph extraction are opt-in follow-on stages.</div>
 
     <div class="row-spread">
       <div class="row">
@@ -733,8 +776,29 @@ async function renderExports() {
       </div>
       <a class="btn btn-ghost" href="#/add">+ Add new export</a>
     </div>
+
+    <div class="pipeline-toggles" id="pipeline-toggles">
+      <span class="pipeline-toggles-label">When ingesting:</span>
+      <label class="checkbox-row">
+        <input type="checkbox" id="opt-embeddings" ${pipelinePrefs.with_embeddings ? "checked" : ""}/>
+        Compute embeddings
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" id="opt-graph" ${pipelinePrefs.with_graph ? "checked" : ""}/>
+        Extract graph
+      </label>
+      <span class="pipeline-toggles-hint">Applies to per-row Ingest/Replace. "Ingest all pending" runs the standard ingest only.</span>
+    </div>
+
     <div id="exports-table"></div>
   `);
+
+  $("#opt-embeddings").addEventListener("change", (e) => {
+    pipelinePrefs.with_embeddings = e.target.checked;
+  });
+  $("#opt-graph").addEventListener("change", (e) => {
+    pipelinePrefs.with_graph = e.target.checked;
+  });
 
   const load = async () => {
     $("#exports-table").innerHTML = `<div class="row"><div class="spinner"></div><div class="muted">Loading…</div></div>`;
@@ -748,7 +812,7 @@ async function renderExports() {
         <thead><tr>
           <th>id</th><th>source</th><th>account</th>
           <th class="right">size</th><th class="right">items</th>
-          <th>status</th><th>received</th><th>actions</th>
+          <th>stages</th><th>received</th><th>actions</th>
         </tr></thead>
         <tbody>
           ${rows
@@ -759,7 +823,7 @@ async function renderExports() {
             <td class="mono">${escapeHtml(r.account)}</td>
             <td class="right mono">${fmtBytes(r.size_bytes)}</td>
             <td class="right mono">${r.items.toLocaleString()}</td>
-            <td>${statusPill(r.latest_run)}</td>
+            <td>${pipelineStagesCell(r)}</td>
             <td class="mono" title="${escapeHtml(r.received_at || "")}">${fmtRel(r.received_at)}</td>
             <td class="actions">
               <button class="btn btn-sm" data-act="ingest">▶ Ingest</button>
@@ -791,21 +855,52 @@ async function renderExports() {
 
   const doIngestOne = async (exportId, replace) => {
     const verb = replace ? "Replacing" : "Ingesting";
-    toast(`${verb} export ${exportId}…`);
+    const usePipeline = pipelinePrefs.with_embeddings || pipelinePrefs.with_graph;
+    toast(`${verb} export ${exportId}${pipelinePrefsToast()}…`);
     try {
-      const res = await api("/api/ingest", {
-        method: "POST",
-        body: JSON.stringify({ export_id: Number(exportId), replace }),
-      });
-      const run = res.runs[0];
-      if (run && run.status === "ok") {
-        toast(`Done · seen ${run.items_seen}, inserted ${run.items_inserted}`);
+      if (usePipeline) {
+        if (replace) {
+          // /api/pipeline supports `replace` directly.
+          const res = await api("/api/pipeline", {
+            method: "POST",
+            body: JSON.stringify({
+              export_id: Number(exportId),
+              replace,
+              with_embeddings: pipelinePrefs.with_embeddings,
+              with_graph: pipelinePrefs.with_graph,
+            }),
+          });
+          summarizePipelineToast(res.pipeline);
+        } else {
+          const res = await api("/api/pipeline", {
+            method: "POST",
+            body: JSON.stringify({
+              export_id: Number(exportId),
+              with_embeddings: pipelinePrefs.with_embeddings,
+              with_graph: pipelinePrefs.with_graph,
+            }),
+          });
+          summarizePipelineToast(res.pipeline);
+        }
       } else {
-        toast(`Run ${run?.status || "?"} — see Dashboard`, "err");
+        const res = await api("/api/ingest", {
+          method: "POST",
+          body: JSON.stringify({ export_id: Number(exportId), replace }),
+        });
+        const run = res.runs[0];
+        if (run && run.status === "ok") {
+          toast(`Done · seen ${run.items_seen}, inserted ${run.items_inserted}`);
+        } else {
+          toast(`Run ${run?.status || "?"} — see Dashboard`, "err");
+        }
       }
     } catch (e) {
       toast(e.message, "err");
     }
+    // refreshLookups re-renders the sidebar Sources section + counts so a new
+    // source becomes visible without a page reload; load() refreshes the
+    // Exports table itself.
+    await refreshLookups();
     load();
   };
 
@@ -821,11 +916,60 @@ async function renderExports() {
     } catch (e) {
       toast(e.message, "err");
     }
+    await refreshLookups();
     load();
   });
 
-  $("#refresh").addEventListener("click", load);
+  $("#refresh").addEventListener("click", async () => {
+    await refreshLookups();
+    load();
+  });
   load();
+}
+
+function summarizePipelineToast(pipeline) {
+  if (!pipeline || !Array.isArray(pipeline.stages)) {
+    toast("Pipeline finished.");
+    return;
+  }
+  const labels = pipeline.stages
+    .map((s) => `${s.stage}=${s.status}`)
+    .join(" · ");
+  const anyError = pipeline.stages.some((s) => s.status === "error");
+  toast(labels, anyError ? "err" : undefined);
+}
+
+function renderPipelineSummary(pipeline) {
+  if (!pipeline || !Array.isArray(pipeline.stages)) return "";
+  const rows = pipeline.stages
+    .map((s) => {
+      const cls =
+        s.status === "done"
+          ? "pill-ok"
+          : s.status === "error"
+            ? "pill-err"
+            : s.status === "skipped"
+              ? "pill-muted"
+              : "pill-info";
+      const meta =
+        s.metadata && Object.keys(s.metadata).length
+          ? Object.entries(s.metadata)
+              .map(
+                ([k, v]) =>
+                  `<span class="mono" style="color:var(--text-3)">${escapeHtml(k)}=${escapeHtml(String(v))}</span>`,
+              )
+              .join(" ")
+          : "";
+      const err = s.error ? `<div class="error-box" style="margin-top:4px">${escapeHtml(s.error)}</div>` : "";
+      return `<div style="margin-top:6px">
+        <span class="pill ${cls}">${escapeHtml(s.stage)}: ${escapeHtml(s.status)}</span>
+        <span class="mono" style="margin-left:8px">items=${s.items_processed ?? 0}</span>
+        ${meta ? `<span style="margin-left:8px">${meta}</span>` : ""}
+        ${err}
+      </div>`;
+    })
+    .join("");
+  return `<div style="margin-top:10px">${rows}</div>`;
 }
 
 function showExportInfo(row) {
@@ -858,8 +1002,48 @@ function showExportInfo(row) {
       ${row.latest_run.error ? `<pre class="body">${escapeHtml(row.latest_run.error)}</pre>` : ""}`
         : ""
     }
+    ${pipelineDetailSection(row.pipeline_stages)}
   `;
   $("#detail").hidden = false;
+}
+
+function pipelineDetailSection(stages) {
+  if (!stages || !Object.keys(stages).length) return "";
+  const order = ["ingest", "embed", "graph"];
+  const blocks = order
+    .map((name) => {
+      const s = stages[name];
+      if (!s) return "";
+      const cls =
+        s.status === "done"
+          ? "pill-ok"
+          : s.status === "error"
+            ? "pill-err"
+            : s.status === "skipped"
+              ? "pill-muted"
+              : "pill-info";
+      const meta =
+        s.metadata && Object.keys(s.metadata).length
+          ? Object.entries(s.metadata)
+              .map(
+                ([k, v]) =>
+                  `<div class="k">${escapeHtml(k)}</div><div class="v mono">${escapeHtml(String(v))}</div>`,
+              )
+              .join("")
+          : "";
+      return `
+        <div style="margin-top:8px">
+          <span class="pill ${cls}">${escapeHtml(name)}: ${escapeHtml(s.status)}</span>
+          <span class="mono" style="margin-left:8px">items=${s.items_processed ?? 0}</span>
+          ${s.started_at ? `<span class="mono" style="margin-left:8px;color:var(--text-3)">started ${escapeHtml(fmtTs(s.started_at) || "")}</span>` : ""}
+          ${s.finished_at ? `<span class="mono" style="margin-left:8px;color:var(--text-3)">finished ${escapeHtml(fmtTs(s.finished_at) || "")}</span>` : ""}
+          ${meta ? `<div class="meta-grid" style="margin-top:6px">${meta}</div>` : ""}
+          ${s.error ? `<pre class="body">${escapeHtml(s.error)}</pre>` : ""}
+        </div>`;
+    })
+    .filter(Boolean)
+    .join("");
+  return blocks ? `<h2>Pipeline stages</h2>${blocks}` : "";
 }
 
 // ---------- Add Export ----------
@@ -900,16 +1084,32 @@ function renderAddExport() {
         <textarea id="f-notes" placeholder="Anything to remember about this export…"></textarea>
       </div>
 
-      <div class="row" style="margin-top:8px">
+      <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:14px">
         <button class="btn btn-primary" id="f-submit">Register export</button>
         <label class="checkbox-row">
           <input type="checkbox" id="f-then-ingest" checked /> Ingest immediately
         </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="f-with-embeddings" ${pipelinePrefs.with_embeddings ? "checked" : ""}/> Compute embeddings
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="f-with-graph" ${pipelinePrefs.with_graph ? "checked" : ""}/> Extract graph
+        </label>
+      </div>
+      <div class="hint" style="margin-top:6px">
+        Standard ingest is always run. Embeddings and graph extraction only run when their toggles are on; either can be re-run later from the Exports page.
       </div>
 
       <div id="f-result" style="margin-top:14px"></div>
     </div>
   `);
+
+  $("#f-with-embeddings").addEventListener("change", (e) => {
+    pipelinePrefs.with_embeddings = e.target.checked;
+  });
+  $("#f-with-graph").addEventListener("change", (e) => {
+    pipelinePrefs.with_graph = e.target.checked;
+  });
 
   $("#f-submit").addEventListener("click", async () => {
     const source = $("#f-source").value;
@@ -930,20 +1130,48 @@ function renderAddExport() {
       $("#f-result").innerHTML = `<div class="pill pill-ok">success</div> ${msg}`;
       toast(`Registered export ${raw.id}`);
       if ($("#f-then-ingest").checked) {
-        $("#f-result").innerHTML += `<div style="margin-top:8px" class="row"><div class="spinner"></div><div class="muted">Ingesting…</div></div>`;
+        // Dedicated container for the ingest stage so the spinner is REPLACED
+        // (not appended-next-to) when the run completes. Prior behavior left
+        // the "Ingesting…" spinner spinning alongside the per-stage "done"
+        // pills, which made it look like ingest was still running.
+        $("#f-result").insertAdjacentHTML(
+          "beforeend",
+          `<div id="f-ingest-progress" style="margin-top:8px" class="row">
+             <div class="spinner"></div>
+             <div class="muted">Ingesting${pipelinePrefsToast()}…</div>
+           </div>`,
+        );
+        const progress = $("#f-ingest-progress");
         try {
-          const res = await api("/api/ingest", {
-            method: "POST",
-            body: JSON.stringify({ export_id: raw.id }),
-          });
-          const run = res.runs[0];
-          toast(`Ingest ${run.status} · inserted ${run.items_inserted}`);
-          $("#f-result").innerHTML += `<div style="margin-top:6px">Run <span class="mono">${run.id}</span> · ${statusPill(run)} · seen ${run.items_seen}, inserted ${run.items_inserted}, skipped ${run.items_skipped}</div>`;
+          const usePipeline =
+            pipelinePrefs.with_embeddings || pipelinePrefs.with_graph;
+          if (usePipeline) {
+            const res = await api("/api/pipeline", {
+              method: "POST",
+              body: JSON.stringify({
+                export_id: raw.id,
+                with_embeddings: pipelinePrefs.with_embeddings,
+                with_graph: pipelinePrefs.with_graph,
+              }),
+            });
+            summarizePipelineToast(res.pipeline);
+            progress.outerHTML = renderPipelineSummary(res.pipeline);
+          } else {
+            const res = await api("/api/ingest", {
+              method: "POST",
+              body: JSON.stringify({ export_id: raw.id }),
+            });
+            const run = res.runs[0];
+            toast(`Ingest ${run.status} · inserted ${run.items_inserted}`);
+            progress.outerHTML = `<div style="margin-top:6px">Run <span class="mono">${run.id}</span> · ${statusPill(run)} · seen ${run.items_seen}, inserted ${run.items_inserted}, skipped ${run.items_skipped}</div>`;
+          }
         } catch (e) {
           toast(e.message, "err");
-          $("#f-result").innerHTML += `<div class="error-box">${escapeHtml(e.message)}</div>`;
+          progress.outerHTML = `<div class="error-box">${escapeHtml(e.message)}</div>`;
         }
       }
+      // refreshLookups now re-renders the sidebar Sources section too, so
+      // newly-ingested sources appear without a manual page reload.
       await refreshLookups();
     } catch (e) {
       $("#f-result").innerHTML = `<div class="error-box">${escapeHtml(e.message)}</div>`;

@@ -10,6 +10,7 @@ from personify.parsers.files import FilesParser
 from personify.parsers.github_repo import GitHubRepoParser
 from personify.parsers.gmail import GmailParser
 from personify.parsers.notion import NotionParser
+from personify.parsers.twitter import TwitterParser
 
 PARSERS: dict[str, Type[ParserBase]] = {
     ChatGPTParser.SOURCE: ChatGPTParser,
@@ -19,6 +20,7 @@ PARSERS: dict[str, Type[ParserBase]] = {
     NotionParser.SOURCE: NotionParser,
     GitHubRepoParser.SOURCE: GitHubRepoParser,
     FilesParser.SOURCE: FilesParser,
+    TwitterParser.SOURCE: TwitterParser,
 }
 
 

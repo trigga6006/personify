@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Column, Index, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Column, Index, JSON, Numeric, String, Text, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 from personify.config import settings
@@ -147,4 +147,107 @@ class Tag(SQLModel, table=True):
 
     __table_args__ = (
         UniqueConstraint("item_id", "key", "value", name="uq_tags_item_kv"),
+    )
+
+
+class Entity(SQLModel, table=True):
+    __tablename__ = "entities"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    database_id: Optional[str] = Field(default=None, index=True, max_length=128)
+    type: str = Field(index=True, max_length=64)
+    name: str = Field(sa_column=Column(Text))
+    canonical_name: str = Field(sa_column=Column(Text))
+    description: Optional[str] = Field(default=None, sa_column=Column(Text))
+    metadata_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column("metadata", JSON))
+    source_count: int = 0
+    confidence: Optional[float] = Field(default=None, sa_column=Column(Numeric(4, 3)))
+    origin: str = Field(default="manual", max_length=16, description="manual|extractor — set on first insert; controls reset pruning")
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+    __table_args__ = (
+        UniqueConstraint("database_id", "type", "canonical_name", name="uq_entities_scope_type_canonical"),
+        Index("idx_entities_database_type", "database_id", "type"),
+        Index("idx_entities_canonical_name", "canonical_name"),
+    )
+
+
+class EntityAlias(SQLModel, table=True):
+    __tablename__ = "entity_aliases"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    entity_id: int = Field(foreign_key="entities.id", index=True)
+    alias: str = Field(sa_column=Column(Text))
+    normalized_alias: str = Field(sa_column=Column(Text))
+    source: Optional[str] = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=_utcnow)
+    __table_args__ = (
+        UniqueConstraint("entity_id", "normalized_alias", name="uq_entity_aliases_entity_normalized"),
+        Index("idx_entity_aliases_normalized_alias", "normalized_alias"),
+    )
+
+
+class Relationship(SQLModel, table=True):
+    __tablename__ = "relationships"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    database_id: Optional[str] = Field(default=None, index=True, max_length=128)
+    source_entity_id: int = Field(foreign_key="entities.id", index=True)
+    target_entity_id: int = Field(foreign_key="entities.id", index=True)
+    relationship_type: str = Field(index=True, max_length=64)
+    confidence: Optional[float] = Field(default=None, sa_column=Column(Numeric(4, 3)))
+    metadata_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column("metadata", JSON))
+    origin: str = Field(default="manual", max_length=16, description="manual|extractor — set on first insert; controls reset pruning")
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+    __table_args__ = (
+        UniqueConstraint(
+            "source_entity_id",
+            "target_entity_id",
+            "relationship_type",
+            name="uq_relationships_source_target_type",
+        ),
+        Index("idx_relationships_source", "source_entity_id"),
+        Index("idx_relationships_target", "target_entity_id"),
+        Index("idx_relationships_type", "relationship_type"),
+        Index("idx_relationships_database", "database_id"),
+    )
+
+
+class EntityEvidence(SQLModel, table=True):
+    __tablename__ = "entity_evidence"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    entity_id: int = Field(foreign_key="entities.id", index=True)
+    source_type: str = Field(max_length=64)
+    source_id: Optional[str] = Field(default=None, max_length=128)
+    source_uri: Optional[str] = Field(default=None, sa_column=Column(Text))
+    quote: Optional[str] = Field(default=None, sa_column=Column(Text))
+    metadata_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column("metadata", JSON))
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class RelationshipEvidence(SQLModel, table=True):
+    __tablename__ = "relationship_evidence"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    relationship_id: int = Field(foreign_key="relationships.id", index=True)
+    source_type: str = Field(max_length=64)
+    source_id: Optional[str] = Field(default=None, max_length=128)
+    source_uri: Optional[str] = Field(default=None, sa_column=Column(Text))
+    quote: Optional[str] = Field(default=None, sa_column=Column(Text))
+    metadata_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column("metadata", JSON))
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class PipelineStage(SQLModel, table=True):
+    __tablename__ = "pipeline_stages"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    raw_export_id: int = Field(foreign_key="raw_exports.id", index=True)
+    ingestion_run_id: Optional[int] = Field(default=None, foreign_key="ingestion_runs.id", index=True)
+    stage: str = Field(max_length=32, description="ingest|embed|graph")
+    status: str = Field(max_length=16, default="pending", description="pending|running|done|error|skipped")
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    items_processed: int = 0
+    error: Optional[str] = Field(default=None, sa_column=Column(Text))
+    metadata_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column("metadata", JSON))
+
+    __table_args__ = (
+        Index("ix_pipeline_stages_export_stage", "raw_export_id", "stage"),
     )

@@ -27,6 +27,7 @@ class ParsedItem:
 class BaseParser(Protocol):
     SOURCE: str
     PARSER_VERSION: str
+    LABEL: Optional[str]
 
     @classmethod
     def detect(cls, path: Path) -> bool:
@@ -43,6 +44,8 @@ class ParserBase:
 
     SOURCE: str = ""
     PARSER_VERSION: str = "0.0.0"
+    # Optional human-friendly display name. Falls back to SOURCE.title() when None.
+    LABEL: Optional[str] = None
 
     @classmethod
     def detect(cls, path: Path) -> bool:  # pragma: no cover - override
@@ -50,3 +53,7 @@ class ParserBase:
 
     def iter_items(self, raw_path: Path, staging_dir: Path) -> Iterator[ParsedItem]:  # pragma: no cover
         raise NotImplementedError
+
+    @classmethod
+    def display_label(cls) -> str:
+        return cls.LABEL or cls.SOURCE.replace("_", " ").title()

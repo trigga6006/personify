@@ -8,8 +8,24 @@ from typing import Iterable
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
+from sqlalchemy import func, or_
+
 from personify.db import session_scope
-from personify.models import Embedding, IngestionRun, Item, ItemMedia, ItemText, RawExport, Tag
+from personify.models import (
+    Embedding,
+    Entity,
+    EntityAlias,
+    EntityEvidence,
+    IngestionRun,
+    Item,
+    ItemMedia,
+    ItemText,
+    PipelineStage,
+    RawExport,
+    Relationship,
+    RelationshipEvidence,
+    Tag,
+)
 from personify.parsers import ParsedItem, get_parser
 from personify.util.hashing import sha256_text
 from personify.util.vault import (
@@ -105,10 +121,18 @@ def _persist_item(
                 metadata_json=m.get("metadata", {}) or {},
             )
         )
+    # Dedup (key, value) tags so a parser that yields the same pair twice
+    # (e.g. a tweet that mentions the same handle multiple times) doesn't
+    # break the run on the uq_tags_item_kv unique constraint.
+    seen_tags: set[tuple[str, str]] = set()
     for k, v in parsed.tags or []:
         if not k or v is None:
             continue
-        s.add(Tag(item_id=item.id, key=k, value=str(v)))
+        sv = str(v)
+        if (k, sv) in seen_tags:
+            continue
+        seen_tags.add((k, sv))
+        s.add(Tag(item_id=item.id, key=k, value=sv))
 
     # Write normalized JSON snapshot.
     norm = normalized_path_for(item.id)
@@ -185,9 +209,14 @@ def ingest_export(raw_export_id: int) -> IngestionRun:
                 run.status = "error"
                 run.error = error
                 run.finished_at = datetime.now(timezone.utc)
+                # The ingest loop's transaction rolled back on the exception,
+                # so nothing this run "inserted" actually landed in the DB.
+                # Reflect that in the run row instead of the in-memory counters,
+                # which would otherwise show a misleading items_inserted=N in
+                # the UI even though no items were committed.
                 run.items_seen = seen
-                run.items_inserted = inserted
-                run.items_skipped = skipped
+                run.items_inserted = 0
+                run.items_skipped = 0
         append_log(f"ingest_{source_slug}", f"error run={run_id} {error}")
         raise
 
@@ -204,6 +233,16 @@ def reset_export(raw_export_id: int) -> dict[str, int]:
 
     The raw export row and vault/raw file are preserved. This is intended for
     parser upgrades where normalized item bodies should be rebuilt.
+
+    Cleanup order is FK-safe for Postgres:
+    1. PipelineStage rows (FK both raw_exports and ingestion_runs).
+    2. Item-backed evidence rows (entity + relationship).
+    3. Prune orphaned extractor-origin relationships and entities — those
+       whose item-backed evidence is now zero. Manual-origin rows and rows
+       still backed by other exports' evidence are preserved.
+    4. Item-scoped derived rows (embeddings, tags, media, text).
+    5. Items themselves (and their normalized JSON snapshots).
+    6. IngestionRun rows last.
     """
     with session_scope() as s:
         item_ids = [
@@ -211,32 +250,171 @@ def reset_export(raw_export_id: int) -> dict[str, int]:
             for i in s.exec(select(Item).where(Item.raw_export_id == raw_export_id)).all()
             if i.id is not None
         ]
-        if not item_ids:
-            run_count = len(
+
+        stages = list(
+            s.exec(select(PipelineStage).where(PipelineStage.raw_export_id == raw_export_id)).all()
+        )
+        for stage in stages:
+            s.delete(stage)
+
+        entity_evidence_deleted = 0
+        relationship_evidence_deleted = 0
+        entities_pruned = 0
+        relationships_pruned = 0
+        if item_ids:
+            item_id_strs = [str(i) for i in item_ids]
+
+            # Collect candidate entity_ids and relationship_ids touched by deleted items
+            # before we mutate evidence rows.
+            candidate_entity_ids = {
+                row.entity_id
+                for row in s.exec(
+                    select(EntityEvidence).where(
+                        EntityEvidence.source_type == "item",
+                        EntityEvidence.source_id.in_(item_id_strs),
+                    )
+                ).all()
+            }
+            candidate_rel_ids = {
+                row.relationship_id
+                for row in s.exec(
+                    select(RelationshipEvidence).where(
+                        RelationshipEvidence.source_type == "item",
+                        RelationshipEvidence.source_id.in_(item_id_strs),
+                    )
+                ).all()
+            }
+            # Extractor handlers sometimes create entities only by participating
+            # in a relationship (e.g. Person endpoints on gmail edges) without
+            # adding direct EntityEvidence. Treat their endpoints as candidates
+            # too, so reset can prune them when no item-backed evidence remains.
+            if candidate_rel_ids:
+                for rel in s.exec(
+                    select(Relationship).where(Relationship.id.in_(candidate_rel_ids))
+                ).all():
+                    candidate_entity_ids.add(rel.source_entity_id)
+                    candidate_entity_ids.add(rel.target_entity_id)
+
+            # Delete the item-backed evidence rows for the items being purged.
+            entity_evidence_rows = list(
                 s.exec(
-                    select(IngestionRun).where(IngestionRun.raw_export_id == raw_export_id)
+                    select(EntityEvidence).where(
+                        EntityEvidence.source_type == "item",
+                        EntityEvidence.source_id.in_(item_id_strs),
+                    )
                 ).all()
             )
-            for run in s.exec(
-                select(IngestionRun).where(IngestionRun.raw_export_id == raw_export_id)
-            ).all():
-                s.delete(run)
-            return {"items": 0, "runs": run_count}
-
-        for model in (Embedding, Tag, ItemMedia, ItemText):
-            for row in s.exec(select(model).where(model.item_id.in_(item_ids))).all():
+            for row in entity_evidence_rows:
                 s.delete(row)
-        for item in s.exec(select(Item).where(Item.id.in_(item_ids))).all():
-            if item.id is not None:
-                norm = normalized_path_for(item.id)
-                if norm.exists():
-                    norm.unlink()
-            s.delete(item)
+            entity_evidence_deleted = len(entity_evidence_rows)
 
-        runs = list(s.exec(select(IngestionRun).where(IngestionRun.raw_export_id == raw_export_id)).all())
+            rel_evidence_rows = list(
+                s.exec(
+                    select(RelationshipEvidence).where(
+                        RelationshipEvidence.source_type == "item",
+                        RelationshipEvidence.source_id.in_(item_id_strs),
+                    )
+                ).all()
+            )
+            for row in rel_evidence_rows:
+                s.delete(row)
+            relationship_evidence_deleted = len(rel_evidence_rows)
+            s.flush()
+
+            # Prune extractor-origin relationships with zero remaining item-backed evidence.
+            # Must run before entity pruning so entity-FK constraints don't block deletes.
+            for rel_id in candidate_rel_ids:
+                rel = s.get(Relationship, rel_id)
+                if rel is None or rel.origin != "extractor":
+                    continue
+                remaining = int(
+                    s.exec(
+                        select(func.count(RelationshipEvidence.id)).where(
+                            RelationshipEvidence.relationship_id == rel_id,
+                            RelationshipEvidence.source_type == "item",
+                        )
+                    ).one()
+                    or 0
+                )
+                if remaining > 0:
+                    continue
+                # Drop any non-item evidence still pointing at this relationship.
+                for ev in s.exec(
+                    select(RelationshipEvidence).where(RelationshipEvidence.relationship_id == rel_id)
+                ).all():
+                    s.delete(ev)
+                s.delete(rel)
+                relationships_pruned += 1
+            s.flush()
+
+            # Prune extractor-origin entities with zero remaining item-backed evidence
+            # AND no remaining relationships referencing them (manual or otherwise).
+            for entity_id in candidate_entity_ids:
+                entity = s.get(Entity, entity_id)
+                if entity is None or entity.origin != "extractor":
+                    continue
+                remaining_evidence = int(
+                    s.exec(
+                        select(func.count(EntityEvidence.id)).where(
+                            EntityEvidence.entity_id == entity_id,
+                            EntityEvidence.source_type == "item",
+                        )
+                    ).one()
+                    or 0
+                )
+                if remaining_evidence > 0:
+                    continue
+                referencing_rels = int(
+                    s.exec(
+                        select(func.count(Relationship.id)).where(
+                            or_(
+                                Relationship.source_entity_id == entity_id,
+                                Relationship.target_entity_id == entity_id,
+                            )
+                        )
+                    ).one()
+                    or 0
+                )
+                if referencing_rels > 0:
+                    # Some manual or sibling-export relationship still depends on it.
+                    continue
+                for alias in s.exec(
+                    select(EntityAlias).where(EntityAlias.entity_id == entity_id)
+                ).all():
+                    s.delete(alias)
+                for ev in s.exec(
+                    select(EntityEvidence).where(EntityEvidence.entity_id == entity_id)
+                ).all():
+                    s.delete(ev)
+                s.delete(entity)
+                entities_pruned += 1
+            s.flush()
+
+            for model in (Embedding, Tag, ItemMedia, ItemText):
+                for row in s.exec(select(model).where(model.item_id.in_(item_ids))).all():
+                    s.delete(row)
+            for item in s.exec(select(Item).where(Item.id.in_(item_ids))).all():
+                if item.id is not None:
+                    norm = normalized_path_for(item.id)
+                    if norm.exists():
+                        norm.unlink()
+                s.delete(item)
+
+        runs = list(
+            s.exec(select(IngestionRun).where(IngestionRun.raw_export_id == raw_export_id)).all()
+        )
         for run in runs:
             s.delete(run)
-        return {"items": len(item_ids), "runs": len(runs)}
+
+        return {
+            "items": len(item_ids),
+            "runs": len(runs),
+            "pipeline_stages": len(stages),
+            "entity_evidence": entity_evidence_deleted,
+            "relationship_evidence": relationship_evidence_deleted,
+            "entities_pruned": entities_pruned,
+            "relationships_pruned": relationships_pruned,
+        }
 
 
 def ingest_source(source_slug: str) -> list[IngestionRun]:

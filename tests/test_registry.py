@@ -1,7 +1,7 @@
 from personify.parsers import PARSERS, get_parser
 
 
-def test_all_seven_sources_registered() -> None:
+def test_all_sources_registered() -> None:
     assert set(PARSERS) == {
         "chatgpt",
         "claude",
@@ -10,6 +10,7 @@ def test_all_seven_sources_registered() -> None:
         "notion",
         "github",
         "files",
+        "twitter",
     }
 
 

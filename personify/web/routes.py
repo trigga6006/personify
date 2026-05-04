@@ -19,7 +19,19 @@ from personify.services.ingest import (
     ingest_source,
     reset_export,
 )
+from personify.services.items import list_items as _list_items_service
+from personify.services.pipeline import (
+    latest_pipeline_summary,
+    latest_stages_for_export,
+    pipeline_result_summary,
+    run_pipeline,
+    stage_summary,
+)
 from personify.services.register import register_export
+from personify.services.runs import (
+    list_recent_runs as _list_recent_runs_service,
+    run_summary as _run_summary_service,
+)
 from personify.services.repos import (
     register_repo_intake,
     register_result_payload,
@@ -40,18 +52,23 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 @router.get("/", include_in_schema=False)
 def root_redirect() -> RedirectResponse:
-    return RedirectResponse(url="/ui", status_code=307)
+    app_index = STATIC_DIR / "app" / "index.html"
+    target = "/app/" if app_index.exists() else "/ui"
+    return RedirectResponse(url=target, status_code=307)
 
 
 @router.get("/ui", include_in_schema=False)
-def ui_index() -> FileResponse:
+def ui_index():
+    app_index = STATIC_DIR / "app" / "index.html"
+    if app_index.exists():
+        return RedirectResponse(url="/app/", status_code=307)
     return FileResponse(STATIC_DIR / "index.html")
 
 
 @router.get("/api/parsers")
 def list_parsers() -> list[dict[str, str]]:
     return [
-        {"slug": slug, "version": cls.PARSER_VERSION, "label": slug.replace("_", " ").title()}
+        {"slug": slug, "version": cls.PARSER_VERSION, "label": cls.display_label()}
         for slug, cls in sorted(PARSERS.items())
     ]
 
@@ -80,6 +97,8 @@ def list_exports(s: Session = Depends(get_session)) -> list[dict[str, Any]]:
         items_count = int(
             s.exec(select(func.count(Item.id)).where(Item.raw_export_id == r.id)).one() or 0
         )
+        latest_stages = latest_stages_for_export(r.id)
+        pipeline_stages = {name: stage_summary(stage) for name, stage in latest_stages.items()}
         out.append(
             {
                 "id": r.id,
@@ -93,6 +112,7 @@ def list_exports(s: Session = Depends(get_session)) -> list[dict[str, Any]]:
                 "notes": r.notes,
                 "items": items_count,
                 "runs": len(runs),
+                "pipeline_stages": pipeline_stages,
                 "latest_run": (
                     {
                         "id": latest.id,
@@ -143,6 +163,15 @@ class IngestRequest(BaseModel):
     source: Optional[str] = None
     all_pending: bool = False
     replace: bool = False
+    with_embeddings: bool = False
+    with_graph: bool = False
+
+
+class PipelineRequest(BaseModel):
+    export_id: int
+    with_embeddings: bool = False
+    with_graph: bool = False
+    replace: bool = False
 
 
 class RepoIntakeScanRequest(BaseModel):
@@ -157,25 +186,20 @@ class RepoIntakeRegisterRequest(RepoIntakeScanRequest):
 
 
 def _run_summary(run: IngestionRun) -> dict[str, Any]:
-    return {
-        "id": run.id,
-        "raw_export_id": run.raw_export_id,
-        "status": run.status,
-        "parser": run.parser_name,
-        "parser_version": run.parser_version,
-        "items_seen": run.items_seen,
-        "items_inserted": run.items_inserted,
-        "items_skipped": run.items_skipped,
-        "started_at": run.started_at.isoformat() if run.started_at else None,
-        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
-        "error": run.error,
-    }
+    # Backwards-compat wrapper — delegates to the extracted service helper so
+    # HTTP and MCP share one implementation.
+    return _run_summary_service(run)
 
 
 @router.post("/api/ingest")
 def post_ingest(req: IngestRequest) -> dict[str, Any]:
     if req.replace and req.export_id is None:
         raise HTTPException(status_code=400, detail="replace requires export_id")
+    if (req.with_embeddings or req.with_graph) and req.export_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="with_embeddings/with_graph require export_id (use /api/pipeline)",
+        )
     if req.all_pending:
         if req.replace:
             raise HTTPException(status_code=400, detail="replace cannot be used with all_pending")
@@ -189,12 +213,41 @@ def post_ingest(req: IngestRequest) -> dict[str, Any]:
         try:
             if req.replace:
                 reset_export(req.export_id)
+            if req.with_embeddings or req.with_graph:
+                result = run_pipeline(
+                    req.export_id,
+                    with_embeddings=req.with_embeddings,
+                    with_graph=req.with_graph,
+                )
+                return {"pipeline": pipeline_result_summary(result)}
             run = ingest_export(req.export_id)
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
         return {"runs": [_run_summary(run)]}
     runs = ingest_source(req.source)  # type: ignore[arg-type]
     return {"runs": [_run_summary(r) for r in runs]}
+
+
+@router.post("/api/pipeline")
+def post_pipeline(req: PipelineRequest) -> dict[str, Any]:
+    """Run the standard pipeline on a single export with optional follow-on stages."""
+    try:
+        if req.replace:
+            reset_export(req.export_id)
+        result = run_pipeline(
+            req.export_id,
+            with_embeddings=req.with_embeddings,
+            with_graph=req.with_graph,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"pipeline": pipeline_result_summary(result)}
+
+
+@router.get("/api/exports/{export_id}/pipeline")
+def get_pipeline_status(export_id: int) -> dict[str, Any]:
+    """Latest PipelineStage rows per stage for one export — UI status panel."""
+    return latest_pipeline_summary(export_id)
 
 
 @router.post("/api/repos/scan")
@@ -281,13 +334,8 @@ def post_activate_vault(name: str) -> dict[str, Any]:
 
 
 @router.get("/api/runs")
-def list_runs(limit: int = 25, s: Session = Depends(get_session)) -> list[dict[str, Any]]:
-    rows = list(
-        s.exec(
-            select(IngestionRun).order_by(IngestionRun.started_at.desc()).limit(limit)
-        ).all()
-    )
-    return [_run_summary(r) for r in rows]
+def list_runs(limit: int = 25) -> list[dict[str, Any]]:
+    return _list_recent_runs_service(limit=limit)
 
 
 @router.get("/api/items")
@@ -297,35 +345,7 @@ def list_items(
     kind: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
-    s: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    stmt = select(Item)
-    count_stmt = select(func.count(Item.id))
-    if source:
-        stmt = stmt.where(Item.source_slug == source)
-        count_stmt = count_stmt.where(Item.source_slug == source)
-    if account:
-        stmt = stmt.where(Item.account_handle == account)
-        count_stmt = count_stmt.where(Item.account_handle == account)
-    if kind:
-        stmt = stmt.where(Item.kind == kind)
-        count_stmt = count_stmt.where(Item.kind == kind)
-    total = int(s.exec(count_stmt).one() or 0)
-    stmt = stmt.order_by(Item.ts.desc().nullslast(), Item.id.desc()).offset(offset).limit(limit)
-    rows = list(s.exec(stmt).all())
-    return {
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "items": [
-            {
-                "id": i.id,
-                "source": i.source_slug,
-                "account": i.account_handle,
-                "kind": i.kind,
-                "title": i.title,
-                "ts": i.ts.isoformat() if i.ts else None,
-            }
-            for i in rows
-        ],
-    }
+    return _list_items_service(
+        source=source, account=account, kind=kind, limit=limit, offset=offset
+    )
