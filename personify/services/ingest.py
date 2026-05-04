@@ -159,7 +159,29 @@ def _persist_item(
     return item, True
 
 
+#: Items per database transaction during ingest. Smaller = better resumability
+#: (less work lost on crash) but higher per-row commit overhead. 100 keeps
+#: large mbox / discord / chatgpt exports under a second of progress lost on
+#: any single transaction failure, while still amortizing commit cost.
+INGEST_BATCH_SIZE = 100
+
+
 def ingest_export(raw_export_id: int) -> IngestionRun:
+    """Stream a parser's items into the DB, committing in fixed-size batches.
+
+    The previous implementation wrapped the entire iteration in a single
+    transaction. That meant a parser crash at item 37,000 of 50,000 rolled
+    back the prior 36,999 — every re-run started from zero.
+
+    This version commits every ``INGEST_BATCH_SIZE`` items. On crash, only
+    the in-flight batch is lost; everything before it is durable. Re-running
+    the export then exercises the existing dedup path
+    (``_existing_item`` → unique constraints on ``(source, account, native_id)``
+    and ``(source, account, content_hash)``), which already classifies
+    previously-inserted items as ``skipped`` and only inserts the survivors.
+
+    Net effect: ingestion is now resumable without any schema changes.
+    """
     with session_scope() as s:
         raw = s.get(RawExport, raw_export_id)
         if not raw:
@@ -177,25 +199,55 @@ def ingest_export(raw_export_id: int) -> IngestionRun:
         run_id = run.id
         raw_id = raw.id
         source_slug = raw.source_slug
+        stored_path = raw.stored_path
 
     append_log(f"ingest_{source_slug}", f"start raw_export={raw_id} run={run_id}")
 
     seen = inserted = skipped = 0
+    batch: list[ParsedItem] = []
     error: str | None = None
-    try:
+
+    def _flush_batch(items: list[ParsedItem]) -> tuple[int, int]:
+        """Persist one batch in its own transaction. Counters update on the
+        run row inside the same transaction so a partial-run crash leaves
+        the row reflecting actual durable progress."""
+        if not items:
+            return 0, 0
+        b_inserted = b_skipped = 0
         with session_scope() as s:
-            raw = s.get(RawExport, raw_id)
-            run = s.get(IngestionRun, run_id)
-            staging = staging_dir_for(raw.id)
-            for parsed in parser.iter_items(Path(raw.stored_path), staging):
-                seen += 1
-                _, was_inserted = _persist_item(s, parsed, raw, run)
+            raw_local = s.get(RawExport, raw_id)
+            run_local = s.get(IngestionRun, run_id)
+            for parsed in items:
+                _, was_inserted = _persist_item(s, parsed, raw_local, run_local)
                 if was_inserted:
-                    inserted += 1
+                    b_inserted += 1
                 else:
-                    skipped += 1
-                if seen % 500 == 0:
-                    s.flush()
+                    b_skipped += 1
+            # Update durable run counters inside this same transaction so
+            # the row stays consistent with the items committed alongside it.
+            run_local.items_seen = seen
+            run_local.items_inserted = inserted + b_inserted
+            run_local.items_skipped = skipped + b_skipped
+        return b_inserted, b_skipped
+
+    try:
+        staging = staging_dir_for(raw_id)
+        for parsed in parser.iter_items(Path(stored_path), staging):
+            seen += 1
+            batch.append(parsed)
+            if len(batch) >= INGEST_BATCH_SIZE:
+                b_ins, b_skip = _flush_batch(batch)
+                inserted += b_ins
+                skipped += b_skip
+                batch.clear()
+        # Trailing partial batch.
+        if batch:
+            b_ins, b_skip = _flush_batch(batch)
+            inserted += b_ins
+            skipped += b_skip
+            batch.clear()
+        with session_scope() as s:
+            run = s.get(IngestionRun, run_id)
             run.items_seen = seen
             run.items_inserted = inserted
             run.items_skipped = skipped
@@ -209,15 +261,16 @@ def ingest_export(raw_export_id: int) -> IngestionRun:
                 run.status = "error"
                 run.error = error
                 run.finished_at = datetime.now(timezone.utc)
-                # The ingest loop's transaction rolled back on the exception,
-                # so nothing this run "inserted" actually landed in the DB.
-                # Reflect that in the run row instead of the in-memory counters,
-                # which would otherwise show a misleading items_inserted=N in
-                # the UI even though no items were committed.
+                # Counters reflect what actually committed before the crash —
+                # callers and the UI now have an accurate "inserted N of M"
+                # picture, and a re-run will dedup past those N rows.
                 run.items_seen = seen
-                run.items_inserted = 0
-                run.items_skipped = 0
-        append_log(f"ingest_{source_slug}", f"error run={run_id} {error}")
+                run.items_inserted = inserted
+                run.items_skipped = skipped
+        append_log(
+            f"ingest_{source_slug}",
+            f"error run={run_id} inserted_before_failure={inserted} {error}",
+        )
         raise
 
     append_log(
