@@ -1,5 +1,8 @@
 <script lang="ts">
   import { router } from "$lib/router.svelte";
+  import { session } from "$lib/session.svelte";
+  import { theme } from "$lib/theme.svelte";
+  import { icons } from "$lib/icons";
 
   const ROUTE_LABELS: Record<string, string> = {
     dashboard: "Dashboard",
@@ -13,6 +16,7 @@
   };
 
   const crumb = $derived(ROUTE_LABELS[router.route] ?? router.route);
+  const vaultName = $derived(session.activeVault?.name ?? "personal");
 
   function focusSearch() { router.go("search"); }
 </script>
@@ -21,10 +25,22 @@
   <div class="topbar-crumb">
     <span class="root">personify</span>
     <span class="sep">/</span>
+    <span class="root">{vaultName}</span>
+    <span class="sep">/</span>
     <span class="leaf">{crumb}</span>
   </div>
 
   <div class="topbar-tools">
+    <button
+      class="topbar-theme-toggle"
+      type="button"
+      onclick={() => theme.toggle()}
+      aria-label={theme.current === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+      title={theme.current === "dark" ? "Switch to light" : "Switch to dark"}
+    >
+      <span aria-hidden="true">{theme.current === "dark" ? icons.sun : icons.moon}</span>
+    </button>
+
     <button class="topbar-search-trigger" type="button" onclick={focusSearch} aria-label="Search">
       <span aria-hidden="true">⌕</span>
       <span>Search the vault</span>

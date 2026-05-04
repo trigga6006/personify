@@ -4,6 +4,7 @@
   import { session } from "$lib/session.svelte";
   import { toasts } from "$lib/toasts.svelte";
   import { modal } from "$lib/modal.svelte";
+  import logoUrl from "../assets/personify-logo.svg";
 
   let open = $state(false);
   let trigger: HTMLElement | undefined;
@@ -38,14 +39,13 @@
 
 <div class="vault-switch" bind:this={trigger}>
   <button class="vault-trigger" type="button" aria-haspopup="true" aria-expanded={open} onclick={toggle}>
-    <span class="vault-mark" aria-hidden="true">
-      <img src="/static/personify-mark.svg?v=5" alt="" />
+    <span class="vault-logo" aria-hidden="true">
+      <img src={logoUrl} alt="Personify" />
     </span>
-    <span class="vault-text">
-      <span class="brand">Personify</span>
-      <span class="name">{session.activeVault?.name ?? "personal"}</span>
+    <span class="vault-meta">
+      <span class="vault-name">{session.activeVault?.name ?? "personal"}</span>
+      <span class="vault-chev" aria-hidden="true">⌄</span>
     </span>
-    <span class="vault-chev" aria-hidden="true">⌄</span>
   </button>
 
   {#if open}

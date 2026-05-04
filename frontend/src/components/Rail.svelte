@@ -18,11 +18,11 @@
 
   const navGroups = [
     {
-      label: null as string | null,
+      label: "Navigate",
       items: [
-        { route: "search",  label: "Search",     icon: icons.search },
-        { route: "browse",  label: "Browse",     icon: icons.browse },
-        { route: "graph",   label: "Graph",      icon: icons.graph  },
+        { route: "search",    label: "Search",     icon: icons.search    },
+        { route: "browse",    label: "Browse",     icon: icons.browse    },
+        { route: "graph",     label: "Graph",      icon: icons.graph     },
       ],
     },
     {
@@ -50,24 +50,14 @@
   </button>
 
   {#each navGroups as group}
-    {#if group.label}
-      <section class="rail-section">
-        <div class="rail-section-label">{group.label}</div>
-        {#each group.items as item}
-          <button class="rail-link" class:active={isActive(item.route)} onclick={() => router.go(item.route)} type="button">
-            <span class="rail-icon">{item.icon}</span><span>{item.label}</span>
-          </button>
-        {/each}
-      </section>
-    {:else}
-      <nav class="rail-nav">
-        {#each group.items as item}
-          <button class="rail-link" class:active={isActive(item.route)} onclick={() => router.go(item.route)} type="button">
-            <span class="rail-icon">{item.icon}</span><span>{item.label}</span>
-          </button>
-        {/each}
-      </nav>
-    {/if}
+    <section class="rail-section">
+      <div class="rail-section-label">{group.label}</div>
+      {#each group.items as item}
+        <button class="rail-link" class:active={isActive(item.route)} onclick={() => router.go(item.route)} type="button">
+          <span class="rail-icon">{item.icon}</span><span>{item.label}</span>
+        </button>
+      {/each}
+    </section>
   {/each}
 
   {#if sourcesWithItems.length}
