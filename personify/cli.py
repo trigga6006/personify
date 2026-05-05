@@ -87,6 +87,12 @@ def _health_url(host: str, port: int) -> str:
 def _backend_health_ok(host: str, port: int) -> bool:
     try:
         with urlopen(_health_url(host, port), timeout=1) as res:
+            if not 200 <= res.status < 300:
+                return False
+        # Health alone can be true for an old FastAPI process left running on
+        # the same port. Probe a UI-required route so `npm start` fails fast
+        # instead of leaving the browser in an infinite loading state.
+        with urlopen(f"http://{_display_host(host)}:{port}/api/mcp/status", timeout=1) as res:
             return 200 <= res.status < 300
     except (OSError, URLError):
         return False
