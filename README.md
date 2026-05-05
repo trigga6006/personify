@@ -14,6 +14,12 @@ queryable schema.
 - **Agent surface**: MCP server (`vault mcp`) — read-only tools + resources for
   any MCP-compatible agent. See [docs/MCP_GUIDE.md](docs/MCP_GUIDE.md).
 
+## Requirements
+
+- Python 3.11+
+- Node.js 20+ with npm
+- Docker Desktop / Docker Compose
+
 ## Filesystem Layout
 
 ```text
@@ -28,28 +34,25 @@ vault/
 ## Quickstart
 
 ```bash
-# 1. start postgres + pgvector
-docker compose up -d
+# 1. set up .env, Python deps, UI deps, Docker/Postgres, and the DB schema
+npm run setup
 
-# 2. create venv + install
-python -m venv .venv
-. .venv/Scripts/activate
-pip install -e .
+# 2. start FastAPI + the web UI
+npm start
+```
 
-# 3. init vault + db
-vault init
+Then open `http://localhost:18766`.
 
-# 4. list parser sources
+The CLI is available inside the generated virtualenv:
+
+```bash
 vault sources
 
-# 5. add an export
 vault add-export --source chatgpt --path ./downloads/chatgpt.zip --account me@example.com
 
-# 6. ingest
 vault ingest --source chatgpt
 vault ingest --all-pending
 
-# 7. search
 vault search "that conversation about postgres"
 vault stats
 ```
@@ -89,8 +92,10 @@ After registration, each new repo has been copied into the vault's immutable
 `raw/` storage, so the temporary intake folder can be deleted.
 
 On this workstation, Docker Compose runs Postgres 17 + pgvector in the
-`personify-db` container. Docker Desktop must be running while you query,
-ingest, or serve the API. Stop the database without deleting data with:
+`personify-db` container. The Compose file binds Postgres to localhost only
+(`127.0.0.1:5544`) and takes the database password from `.env`. Docker Desktop
+must be running while you query, ingest, or serve the API. Stop the database
+without deleting data with:
 
 ```bash
 docker compose stop

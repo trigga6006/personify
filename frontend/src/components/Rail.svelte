@@ -20,24 +20,26 @@
     {
       label: "Navigate",
       items: [
-        { route: "search",    label: "Search",     icon: icons.search    },
-        { route: "browse",    label: "Browse",     icon: icons.browse    },
-        { route: "graph",     label: "Graph",      icon: icons.graph     },
+        { route: "search", label: "Search", icon: icons.search },
+        { route: "browse", label: "Browse", icon: icons.browse },
+        { route: "graph", label: "Graph", icon: icons.graph },
       ],
     },
     {
       label: "Vault",
       items: [
-        { route: "dashboard", label: "Dashboard",  icon: icons.dashboard },
-        { route: "exports",   label: "Exports",    icon: icons.exports   },
-        { route: "repos",     label: "Repo intake",icon: icons.repos     },
-        { route: "embed",     label: "Embeddings", icon: icons.embed     },
-        { route: "settings",  label: "Settings",   icon: icons.settings  },
+        { route: "dashboard", label: "Dashboard", icon: icons.dashboard },
+        { route: "exports", label: "Exports", icon: icons.exports },
+        { route: "repos", label: "Repo intake", icon: icons.repos },
+        { route: "embed", label: "Embeddings", icon: icons.embed },
+        { route: "settings", label: "Settings", icon: icons.settings },
       ],
     },
   ];
 
-  function isActive(name: string) { return router.route === name; }
+  function isActive(name: string) {
+    return router.route === name;
+  }
 </script>
 
 <aside class="rail">
@@ -53,7 +55,12 @@
     <section class="rail-section">
       <div class="rail-section-label">{group.label}</div>
       {#each group.items as item}
-        <button class="rail-link" class:active={isActive(item.route)} onclick={() => router.go(item.route)} type="button">
+        <button
+          class="rail-link"
+          class:active={isActive(item.route)}
+          onclick={() => router.go(item.route)}
+          type="button"
+        >
           <span class="rail-icon">{item.icon}</span><span>{item.label}</span>
         </button>
       {/each}

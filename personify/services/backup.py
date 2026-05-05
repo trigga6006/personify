@@ -47,22 +47,20 @@ The bundle is a gzipped tar archive containing:
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import tarfile
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from sqlalchemy import Table, inspect
-from sqlmodel import Session, SQLModel, select
+from sqlmodel import SQLModel
 
 from personify import __version__
 from personify.config import (
     configure_vault,
-    db_name_for_vault,
     normalize_vault_name,
     settings,
     vault_dir_for_name,
@@ -78,6 +76,12 @@ BUNDLE_FORMAT_VERSION = 1
 #: they're regenerable and cheap to recompute, and because round-tripping
 #: pgvector columns through a portable JSON dump is fragile.
 SKIPPED_TABLES: frozenset[str] = frozenset({"embeddings"})
+
+#: Tables that ``init_db()`` auto-seeds (the parser registry lands in
+#: ``sources``), so a freshly-initialized empty vault has rows here. The
+#: emptiness gate ignores these — finding rows in ``sources`` does not
+#: mean the user has data worth refusing to overwrite.
+AUTO_SEEDED_TABLES: frozenset[str] = frozenset({"sources"})
 
 #: Subdirectories under ``vault/`` that we ship in the bundle. ``logs/`` is
 #: deliberately excluded — they're append-only, contain timestamps, and
@@ -294,16 +298,47 @@ def _safe_extract(tar: tarfile.TarFile, dest: Path) -> None:
         tar.extractall(dest)  # noqa: S202 — guarded above
 
 
+def _first_populated_table(engine) -> str | None:
+    """Return the first non-skipped, non-auto-seeded table that has any rows
+    on ``engine``, or ``None`` if every such table is empty.
+
+    ``_insert_table_rows`` deletes EVERY non-skipped table during restore, so
+    the emptiness gate must look at every table we'd otherwise clobber — not
+    just ``items``. A target with registered exports/accounts/runs but zero
+    items would otherwise pass the old check and get silently wiped.
+    """
+    from personify import models  # noqa: F401 — register metadata
+
+    insp = inspect(engine)
+    existing = set(insp.get_table_names())
+    with engine.connect() as conn:
+        for table in SQLModel.metadata.sorted_tables:
+            if table.name in SKIPPED_TABLES or table.name in AUTO_SEEDED_TABLES:
+                continue
+            if table.name not in existing:
+                continue
+            row = conn.execute(table.select().limit(1)).first()
+            if row is not None:
+                return table.name
+    return None
+
+
 def _target_is_empty(name: str) -> tuple[bool, str]:
     """True if ``name`` is unallocated. Returns ``(ok, reason)`` so callers
     can surface a clear error to the user.
 
-    Two checks: the vault directory must not exist with content, and the
-    target database must not have any items. When the caller is restoring
-    over the *currently active* vault we use the live engine (no switching).
-    For a different vault name we briefly point ``settings`` at it, do a
-    read-only introspection, then restore — failure to introspect a
-    nonexistent target is fine and is treated as "empty".
+    Two checks: the vault directory must not exist with content, and every
+    non-skipped, non-auto-seeded table in the target database must be empty.
+    Restore deletes every non-skipped table before re-inserting, so the
+    emptiness check has to span the same set — checking only ``items``
+    would let a half-set-up vault (accounts/exports/runs but no items yet)
+    silently get clobbered.
+
+    When the caller is restoring over the *currently active* vault we use
+    the live engine (no switching). For a different vault name we briefly
+    point ``settings`` at it, do a read-only introspection, then restore —
+    failure to introspect a nonexistent target is fine and is treated as
+    "empty".
     """
     target_dir = vault_dir_for_name(name)
     if target_dir.exists() and any(target_dir.rglob("*")):
@@ -313,16 +348,11 @@ def _target_is_empty(name: str) -> tuple[bool, str]:
     if normalize_vault_name(name) == normalize_vault_name(settings.vault_name):
         engine = get_engine()
         try:
-            insp = inspect(engine)
-            if insp.has_table("items"):
-                from personify.models import Item
-
-                with engine.connect() as conn:
-                    n = conn.execute(Item.__table__.select().limit(1)).first()
-                    if n is not None:
-                        return False, f"vault {name!r} already has rows in items"
+            populated_table = _first_populated_table(engine)
         except Exception as e:  # noqa: BLE001 — surface a clean error
             return False, f"could not introspect active db: {e}"
+        if populated_table is not None:
+            return False, f"vault {name!r} already has rows in {populated_table}"
         return True, ""
 
     # Case 2: restoring into a different vault profile — switch briefly
@@ -338,15 +368,10 @@ def _target_is_empty(name: str) -> tuple[bool, str]:
         reset_engine()
         engine = get_engine()
         try:
-            insp = inspect(engine)
-            if insp.has_table("items"):
-                from personify.models import Item
-
-                with engine.connect() as conn:
-                    n = conn.execute(Item.__table__.select().limit(1)).first()
-                    if n is not None:
-                        populated = True
-                        reason = f"vault {name!r} already has rows in items"
+            populated_table = _first_populated_table(engine)
+            if populated_table is not None:
+                populated = True
+                reason = f"vault {name!r} already has rows in {populated_table}"
         except Exception:
             # Target DB unreachable — treat as empty. The subsequent
             # restore will create it.
@@ -449,7 +474,7 @@ def restore_vault(bundle_path: Path, into_vault: str) -> RestoreResult:
 
         manifest_path = staging / "manifest.json"
         if not manifest_path.is_file():
-            raise BackupError(f"bundle is missing manifest.json")
+            raise BackupError("bundle is missing manifest.json")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         bundle_v = manifest.get("bundle_format_version")
         if bundle_v != BUNDLE_FORMAT_VERSION:

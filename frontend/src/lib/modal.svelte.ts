@@ -7,8 +7,16 @@ export type ModalName = "add-export" | "create-vault" | null;
 let stack = $state<ModalName[]>([]);
 
 export const modal = {
-  get current(): ModalName { return stack[stack.length - 1] ?? null; },
-  open(name: Exclude<ModalName, null>) { stack = [...stack, name]; },
-  close() { stack = stack.slice(0, -1); },
-  closeAll() { stack = []; },
+  get current(): ModalName {
+    return stack[stack.length - 1] ?? null;
+  },
+  open(name: Exclude<ModalName, null>) {
+    stack = [...stack, name];
+  },
+  close() {
+    stack = stack.slice(0, -1);
+  },
+  closeAll() {
+    stack = [];
+  },
 };

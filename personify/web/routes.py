@@ -38,6 +38,11 @@ from personify.services.repos import (
     scan_repo_intake,
     scan_row_payload,
 )
+from personify.services.mcp_runner import (
+    start as _mcp_start,
+    status as _mcp_status,
+    stop as _mcp_stop,
+)
 from personify.services.vaults import (
     activate_vault,
     create_vault,
@@ -331,6 +336,23 @@ def post_activate_vault(name: str) -> dict[str, Any]:
         return activate_vault(name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ---- MCP server ----------------------------------------------------------
+
+@router.get("/api/mcp/status")
+def get_mcp_status() -> dict[str, Any]:
+    return _mcp_status()
+
+
+@router.post("/api/mcp/start")
+def post_mcp_start() -> dict[str, Any]:
+    return _mcp_start()
+
+
+@router.post("/api/mcp/stop")
+def post_mcp_stop() -> dict[str, Any]:
+    return _mcp_stop()
 
 
 @router.get("/api/runs")

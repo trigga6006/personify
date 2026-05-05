@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "setup:env": "node scripts/setup-env.mjs",
+    "start": "node scripts/start.mjs"
+  }
+}

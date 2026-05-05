@@ -66,8 +66,16 @@ def _persist_item(
     parsed: ParsedItem,
     raw_export: RawExport,
     run: IngestionRun,
-) -> tuple[Item, bool]:
-    """Insert (or skip) one ParsedItem. Returns (item, inserted_bool)."""
+) -> tuple[Item, bool, tuple[int, str] | None]:
+    """Insert (or skip) one ParsedItem.
+
+    Returns ``(item, inserted_bool, normalized_payload_or_None)``. The third
+    element is the on-disk JSON snapshot the caller should write *after the
+    batch commits* — see ``_flush_batch``. Writing inside the transaction
+    means a rolled-back batch leaves orphaned ``normalized/item_<id>.json``
+    files keyed to ids that never persisted; deferring the write until
+    after commit closes that race.
+    """
     body = parsed.body or ""
     content_hash = sha256_text(f"{parsed.kind}\0{parsed.title or ''}\0{body}")
 
@@ -79,7 +87,7 @@ def _persist_item(
         content_hash,
     )
     if existing:
-        return existing, False
+        return existing, False, None
 
     item = Item(
         source_slug=raw_export.source_slug,
@@ -105,7 +113,7 @@ def _persist_item(
             parsed.native_id,
             content_hash,
         )
-        return existing, False  # type: ignore[return-value]
+        return existing, False, None  # type: ignore[return-value]
 
     if body:
         s.add(ItemText(item_id=item.id, body=body, char_count=len(body)))
@@ -134,29 +142,24 @@ def _persist_item(
         seen_tags.add((k, sv))
         s.add(Tag(item_id=item.id, key=k, value=sv))
 
-    # Write normalized JSON snapshot.
-    norm = normalized_path_for(item.id)
-    norm.write_text(
-        json.dumps(
-            {
-                "id": item.id,
-                "source": raw_export.source_slug,
-                "account": raw_export.account_handle,
-                "raw_export_id": raw_export.id,
-                "native_id": parsed.native_id,
-                "kind": parsed.kind,
-                "title": parsed.title,
-                "ts": parsed.ts.isoformat() if parsed.ts else None,
-                "content_hash": content_hash,
-                "metadata": parsed.metadata or {},
-                "body": body,
-            },
-            indent=2,
-            default=str,
-        ),
-        encoding="utf-8",
+    normalized_json = json.dumps(
+        {
+            "id": item.id,
+            "source": raw_export.source_slug,
+            "account": raw_export.account_handle,
+            "raw_export_id": raw_export.id,
+            "native_id": parsed.native_id,
+            "kind": parsed.kind,
+            "title": parsed.title,
+            "ts": parsed.ts.isoformat() if parsed.ts else None,
+            "content_hash": content_hash,
+            "metadata": parsed.metadata or {},
+            "body": body,
+        },
+        indent=2,
+        default=str,
     )
-    return item, True
+    return item, True, (item.id, normalized_json)
 
 
 #: Items per database transaction during ingest. Smaller = better resumability
@@ -210,17 +213,35 @@ def ingest_export(raw_export_id: int) -> IngestionRun:
     def _flush_batch(items: list[ParsedItem]) -> tuple[int, int]:
         """Persist one batch in its own transaction. Counters update on the
         run row inside the same transaction so a partial-run crash leaves
-        the row reflecting actual durable progress."""
+        the row reflecting actual durable progress.
+
+        Normalized JSON snapshots are collected during the transaction and
+        written to disk only AFTER the session commits successfully — so a
+        rolled-back batch never leaves orphaned ``normalized/item_*.json``
+        files referencing item ids that never persisted to the DB.
+
+        Snapshot writes themselves are best-effort: once the DB commit is
+        durable, a write_text failure must NOT propagate. If it did, the
+        outer ``try/except`` would catch it and overwrite the just-committed
+        ``items_inserted`` / ``items_skipped`` columns with the stale
+        outer-scope counters (which haven't been incremented yet — that
+        increment happens on the line *after* the call returns). The DB is
+        the source of truth; missing snapshots are recoverable by a future
+        repair/normalize pass, while a lying counter is not.
+        """
         if not items:
             return 0, 0
         b_inserted = b_skipped = 0
+        snapshots: list[tuple[int, str]] = []
         with session_scope() as s:
             raw_local = s.get(RawExport, raw_id)
             run_local = s.get(IngestionRun, run_id)
             for parsed in items:
-                _, was_inserted = _persist_item(s, parsed, raw_local, run_local)
+                _, was_inserted, snapshot = _persist_item(s, parsed, raw_local, run_local)
                 if was_inserted:
                     b_inserted += 1
+                    if snapshot is not None:
+                        snapshots.append(snapshot)
                 else:
                     b_skipped += 1
             # Update durable run counters inside this same transaction so
@@ -228,6 +249,17 @@ def ingest_export(raw_export_id: int) -> IngestionRun:
             run_local.items_seen = seen
             run_local.items_inserted = inserted + b_inserted
             run_local.items_skipped = skipped + b_skipped
+        # Session has committed. Snapshot writes are best-effort from here:
+        # the DB is durable, so a disk failure must not overwrite the run
+        # counters via the outer except handler.
+        for item_id, payload in snapshots:
+            try:
+                normalized_path_for(item_id).write_text(payload, encoding="utf-8")
+            except OSError as e:
+                append_log(
+                    f"ingest_{source_slug}",
+                    f"snapshot_write_failed run={run_id} item={item_id} {e!r}",
+                )
         return b_inserted, b_skipped
 
     try:

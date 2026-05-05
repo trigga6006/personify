@@ -28,7 +28,9 @@
   const valid = $derived(!!source && !!path.trim() && !!account.trim());
   const busy = $derived(phase === "registering" || phase === "ingesting");
   const sourceOptions = $derived(
-    [...session.parsers].sort((a, b) => sourceBrand(a.slug).title.localeCompare(sourceBrand(b.slug).title))
+    [...session.parsers].sort((a, b) =>
+      sourceBrand(a.slug).title.localeCompare(sourceBrand(b.slug).title),
+    ),
   );
   const selectedParser = $derived(session.parsers.find((p) => p.slug === source) ?? null);
   const selectedBrand = $derived(selectedParser ? sourceBrand(selectedParser.slug) : null);
@@ -55,7 +57,9 @@
     phase = "registering";
     try {
       const reg = await api.registerExport({
-        source, path: path.trim(), account: account.trim(),
+        source,
+        path: path.trim(),
+        account: account.trim(),
         notes: notes.trim() || null,
       });
       registeredId = reg.id;
@@ -64,7 +68,9 @@
         phase = "ingesting";
         if (withEmbeddings || withGraph) {
           const res = await api.pipeline({
-            export_id: reg.id, with_embeddings: withEmbeddings, with_graph: withGraph,
+            export_id: reg.id,
+            with_embeddings: withEmbeddings,
+            with_graph: withGraph,
           });
           pipelineResult = res.pipeline;
           const anyError = pipelineResult.stages.some((s) => s.status === "error");
@@ -79,7 +85,7 @@
       phase = "done";
       await session.refresh();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : (e instanceof Error ? e.message : String(e));
+      const msg = e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
       errorMsg = msg;
       toasts.err(msg);
       phase = "error";
@@ -87,8 +93,13 @@
   }
 
   function reset() {
-    source = ""; path = ""; account = ""; notes = "";
-    pipelineResult = null; errorMsg = null; registeredId = null;
+    source = "";
+    path = "";
+    account = "";
+    notes = "";
+    pipelineResult = null;
+    errorMsg = null;
+    registeredId = null;
     sourceOpen = false;
     phase = "form";
   }
@@ -107,7 +118,9 @@
 <div class="modal-shell" role="dialog" aria-labelledby="add-export-title">
   <div class="head">
     <h2 id="add-export-title">Register an export</h2>
-    <button class="icon-btn" type="button" aria-label="Close" onclick={() => modal.close()}>✕</button>
+    <button class="icon-btn" type="button" aria-label="Close" onclick={() => modal.close()}
+      >✕</button
+    >
   </div>
 
   <div class="body">
@@ -124,12 +137,13 @@
               disabled={busy}
               aria-haspopup="listbox"
               aria-expanded={sourceOpen}
-              onclick={() => sourceOpen = !sourceOpen}
+              onclick={() => (sourceOpen = !sourceOpen)}
             >
               {#if selectedBrand && selectedParser}
                 <span class="brand-mark">
                   <svg viewBox={selectedBrand.viewBox} aria-hidden="true">
-                    {#each selectedBrand.paths as path}<path d={path.d} fill={path.fill}></path>{/each}
+                    {#each selectedBrand.paths as path}<path d={path.d} fill={path.fill}
+                      ></path>{/each}
                   </svg>
                 </span>
                 <span class="source-copy">
@@ -180,8 +194,13 @@
       <div class="field-row">
         <label for="ae-path">Path</label>
         <div class="inputs">
-          <input id="ae-path" type="text" bind:value={path}
-                 placeholder="C:\Users\you\Downloads\twitter-2026.zip" disabled={busy} />
+          <input
+            id="ae-path"
+            type="text"
+            bind:value={path}
+            placeholder="C:\Users\you\Downloads\twitter-2026.zip"
+            disabled={busy}
+          />
           <span class="help">Full path to a .zip file or extracted directory on this machine.</span>
         </div>
       </div>
@@ -189,8 +208,14 @@
       <div class="field-row">
         <label for="ae-account">Account</label>
         <div class="inputs">
-          <input id="ae-account" type="text" bind:value={account}
-                 placeholder="you@example.com or @handle" list="ae-acct-list" disabled={busy} />
+          <input
+            id="ae-account"
+            type="text"
+            bind:value={account}
+            placeholder="you@example.com or @handle"
+            list="ae-acct-list"
+            disabled={busy}
+          />
           <datalist id="ae-acct-list">
             {#each session.accounts as a (a.handle)}<option value={a.handle}></option>{/each}
           </datalist>
@@ -201,8 +226,12 @@
       <div class="field-row">
         <label for="ae-notes">Notes</label>
         <div class="inputs">
-          <textarea id="ae-notes" bind:value={notes}
-                    placeholder="Anything to remember about this export…" disabled={busy}></textarea>
+          <textarea
+            id="ae-notes"
+            bind:value={notes}
+            placeholder="Anything to remember about this export…"
+            disabled={busy}
+          ></textarea>
         </div>
       </div>
 
@@ -214,13 +243,18 @@
               <input type="checkbox" bind:checked={thenIngest} disabled={busy} /> Ingest immediately
             </label>
             <label class="checkbox-row">
-              <input type="checkbox" bind:checked={withEmbeddings} disabled={busy || !thenIngest} /> Compute embeddings
+              <input type="checkbox" bind:checked={withEmbeddings} disabled={busy || !thenIngest} /> Compute
+              embeddings
             </label>
             <label class="checkbox-row">
-              <input type="checkbox" bind:checked={withGraph} disabled={busy || !thenIngest} /> Extract graph
+              <input type="checkbox" bind:checked={withGraph} disabled={busy || !thenIngest} /> Extract
+              graph
             </label>
           </div>
-          <span class="help">Standard ingest is always run; embeddings and graph extraction are optional follow-on stages.</span>
+          <span class="help"
+            >Standard ingest is always run; embeddings and graph extraction are optional follow-on
+            stages.</span
+          >
         </div>
       </div>
 
@@ -252,7 +286,9 @@
       <button class="btn btn-ghost" type="button" onclick={reset}>Add another</button>
       <button class="btn btn-primary" type="button" onclick={gotoExports}>View exports →</button>
     {:else}
-      <button class="btn btn-ghost" type="button" onclick={() => modal.close()} disabled={busy}>Cancel</button>
+      <button class="btn btn-ghost" type="button" onclick={() => modal.close()} disabled={busy}
+        >Cancel</button
+      >
       <button class="btn btn-primary" type="button" onclick={submit} disabled={!valid || busy}>
         {#if phase === "registering"}<span class="spinner spinner-xs"></span> Registering…
         {:else if phase === "ingesting"}<span class="spinner spinner-xs"></span> Ingesting…
@@ -263,12 +299,24 @@
 </div>
 
 <style>
-  .spinner-xs { width: 11px; height: 11px; border-width: 2px; }
-  .icon-btn {
-    background: transparent; border: 0; color: var(--text-3);
-    padding: 6px 8px; border-radius: 6px; font-size: 14px; line-height: 1;
+  .spinner-xs {
+    width: 11px;
+    height: 11px;
+    border-width: 2px;
   }
-  .icon-btn:hover { background: var(--bg-soft); color: var(--text); }
+  .icon-btn {
+    background: transparent;
+    border: 0;
+    color: var(--text-3);
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 14px;
+    line-height: 1;
+  }
+  .icon-btn:hover {
+    background: var(--bg-soft);
+    color: var(--text);
+  }
 
   .source-picker {
     position: relative;
@@ -294,7 +342,10 @@
     border-radius: 7px;
     padding: 6px 10px;
     overflow: hidden;
-    transition: border-color var(--t-fast), background var(--t-fast), box-shadow var(--t-fast);
+    transition:
+      border-color var(--t-fast),
+      background var(--t-fast),
+      box-shadow var(--t-fast);
   }
 
   .source-trigger .brand-mark,
@@ -382,7 +433,9 @@
   .source-chev {
     color: var(--text-3);
     font-size: 14px;
-    transition: transform var(--t-fast), color var(--t-fast);
+    transition:
+      transform var(--t-fast),
+      color var(--t-fast);
   }
 
   .source-trigger.open .source-chev {
@@ -402,7 +455,9 @@
     border: 1px solid var(--line-strong);
     border-radius: 10px;
     background: color-mix(in srgb, var(--bg-card) 94%, black);
-    box-shadow: 0 18px 42px -16px rgba(0, 0, 0, 0.7), inset 0 1px 0 var(--rule-strong);
+    box-shadow:
+      0 18px 42px -16px rgba(0, 0, 0, 0.7),
+      inset 0 1px 0 var(--rule-strong);
   }
 
   .source-option {
@@ -412,7 +467,9 @@
     padding: 5px 7px;
     background: transparent;
     cursor: pointer;
-    transition: background var(--t-fast), border-color var(--t-fast);
+    transition:
+      background var(--t-fast),
+      border-color var(--t-fast);
   }
 
   .source-option:hover,

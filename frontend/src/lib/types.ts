@@ -5,11 +5,25 @@
 
 export type StageStatus = "pending" | "running" | "done" | "error" | "skipped";
 
-export interface Health { status: string; version: string }
+export interface Health {
+  status: string;
+  version: string;
+}
 
-export interface Parser { slug: string; version: string; label: string }
-export interface Account { handle: string; display_name: string | null }
-export interface Source { slug: string; label: string; created_at?: string }
+export interface Parser {
+  slug: string;
+  version: string;
+  label: string;
+}
+export interface Account {
+  handle: string;
+  display_name: string | null;
+}
+export interface Source {
+  slug: string;
+  label: string;
+  created_at?: string;
+}
 
 export interface Stats {
   items: number;
@@ -76,8 +90,31 @@ export interface PipelineResult {
   }[];
 }
 
-export interface VaultInfo { name: string; db_url: string; vault_dir: string; active: boolean; exists: boolean }
-export interface VaultsResponse { active: VaultInfo; vaults: VaultInfo[] }
+export interface VaultInfo {
+  name: string;
+  db_url: string;
+  vault_dir: string;
+  active: boolean;
+  exists: boolean;
+}
+export interface VaultsResponse {
+  active: VaultInfo;
+  vaults: VaultInfo[];
+}
+
+// MCP HTTP transport status. The stdio entry point used by Claude Desktop
+// is independent of these toggles — start/stop only affects the in-process
+// HTTP server mounted at /mcp.
+export interface MCPStatus {
+  enabled: boolean;
+  started_at: string | null;
+  uptime_seconds: number | null;
+  request_count: number;
+  last_request_at: string | null;
+  session_count: number;
+  last_error: string | null;
+  endpoint: string;
+}
 
 export interface ItemRow {
   id: number;
@@ -88,7 +125,12 @@ export interface ItemRow {
   ts: string | null;
 }
 
-export interface ItemsResponse { total: number; limit: number; offset: number; items: ItemRow[] }
+export interface ItemsResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  items: ItemRow[];
+}
 
 export interface ItemFull {
   id: number;
@@ -129,8 +171,18 @@ export interface IngestRequest {
   with_embeddings?: boolean;
   with_graph?: boolean;
 }
-export interface PipelineRequest { export_id: number; with_embeddings?: boolean; with_graph?: boolean; replace?: boolean }
-export interface RegisterExportRequest { source: string; path: string; account: string; notes?: string | null }
+export interface PipelineRequest {
+  export_id: number;
+  with_embeddings?: boolean;
+  with_graph?: boolean;
+  replace?: boolean;
+}
+export interface RegisterExportRequest {
+  source: string;
+  path: string;
+  account: string;
+  notes?: string | null;
+}
 export interface RegisterExportResponse {
   id: number;
   source: string;
@@ -139,7 +191,10 @@ export interface RegisterExportResponse {
   size_bytes: number;
   received_at: string | null;
 }
-export interface IngestResponse { runs?: RunSummary[]; pipeline?: PipelineResult }
+export interface IngestResponse {
+  runs?: RunSummary[];
+  pipeline?: PipelineResult;
+}
 
 // ----- Repo intake --------------------------------------------------------
 
@@ -155,7 +210,9 @@ export interface RepoScanRow {
   existing_export_id: number | null;
   repo: RepoMeta | null;
 }
-export interface RepoScanResponse { repos: RepoScanRow[] }
+export interface RepoScanResponse {
+  repos: RepoScanRow[];
+}
 export interface RepoRegisterResult {
   status: string;
   repo: RepoMeta | null;
@@ -163,11 +220,19 @@ export interface RepoRegisterResult {
   run_id: number | null;
   error: string | null;
 }
-export interface RepoRegisterResponse { results: RepoRegisterResult[] }
+export interface RepoRegisterResponse {
+  results: RepoRegisterResult[];
+}
 
 // ----- Embeddings ---------------------------------------------------------
 
-export interface EmbedDeviceInfo { device: string; label: string; torch: string | null; available: boolean; note?: string }
+export interface EmbedDeviceInfo {
+  device: string;
+  label: string;
+  torch: string | null;
+  available: boolean;
+  note?: string;
+}
 export interface EmbedStats {
   model: string;
   embed_dim: number;
@@ -177,7 +242,9 @@ export interface EmbedStats {
   total_chunks: number;
   device: EmbedDeviceInfo;
 }
-export interface EmbedResponse { embedded: number }
+export interface EmbedResponse {
+  embedded: number;
+}
 
 // ----- Graph --------------------------------------------------------------
 
@@ -190,23 +257,55 @@ export interface EntitySummary {
 }
 
 export interface EntityFull {
-  entity: { id: number; type: string; name: string; canonical_name: string; description: string | null; metadata: Record<string, any>; origin: string; confidence: number | null };
+  entity: {
+    id: number;
+    type: string;
+    name: string;
+    canonical_name: string;
+    description: string | null;
+    metadata: Record<string, any>;
+    origin: string;
+    confidence: number | null;
+  };
   aliases: { id: number; alias: string; normalized_alias: string; source: string | null }[];
-  evidence: { id: number; source_type: string; source_id: string | null; source_uri: string | null; quote: string | null; metadata: Record<string, any> }[];
+  evidence: {
+    id: number;
+    source_type: string;
+    source_id: string | null;
+    source_uri: string | null;
+    quote: string | null;
+    metadata: Record<string, any>;
+  }[];
 }
 
 export interface EntityNeighborhood {
   center: { id: number; type: string; name: string; canonical_name: string } | null;
   nodes: { id: number; type: string; name: string; canonical_name: string }[];
-  edges: { id: number; source_entity_id: number; target_entity_id: number; relationship_type: string }[];
+  edges: {
+    id: number;
+    source_entity_id: number;
+    target_entity_id: number;
+    relationship_type: string;
+  }[];
 }
 
 export interface EntityContext {
-  entity: { id: number; type: string; name: string; canonical_name: string; description: string | null };
+  entity: {
+    id: number;
+    type: string;
+    name: string;
+    canonical_name: string;
+    description: string | null;
+  };
   summary: string;
   aliases: { alias: string }[];
   related_entities: { id: number; type: string; name: string }[];
-  relationships: { id: number; source_entity_id: number; target_entity_id: number; relationship_type: string }[];
+  relationships: {
+    id: number;
+    source_entity_id: number;
+    target_entity_id: number;
+    relationship_type: string;
+  }[];
   evidence: { id: number; source_type: string; source_id: string | null; quote: string | null }[];
   suggested_queries: string[];
 }

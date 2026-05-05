@@ -13,7 +13,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    db_url: str = "postgresql+psycopg://personify:personify@localhost:5544/personify"
+    db_url: str = "postgresql+psycopg://personify:personify-local-dev-only@127.0.0.1:5544/personify"
     vault_dir: Path = Path("./vault")
     vault_name: str = "personal"
     vaults_dir: Path = Path("./vaults")

@@ -81,13 +81,19 @@ time embeddings are run.
 Create `.env` if it does not exist:
 
 ```powershell
-Copy-Item .env.example .env
+npm run setup
 ```
 
-Default values are usually fine:
+The setup command creates `.env`, generates a local database password, creates
+the Python virtualenv, installs backend and frontend dependencies, starts
+Docker/Postgres, and initializes the vault schema. The resulting `.env` values
+look like:
 
 ```text
-PERSONIFY_DB_URL=postgresql+psycopg://personify:personify@localhost:5544/personify
+PERSONIFY_DB_USER=personify
+PERSONIFY_DB_PASSWORD=personify-local-dev-only
+PERSONIFY_DB_NAME=personify
+PERSONIFY_DB_URL=postgresql+psycopg://personify:personify-local-dev-only@127.0.0.1:5544/personify
 PERSONIFY_VAULT_DIR=./vault
 PERSONIFY_VAULT_NAME=personal
 PERSONIFY_VAULTS_DIR=./vaults
@@ -96,6 +102,8 @@ PERSONIFY_API_PORT=18765
 PERSONIFY_EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2
 PERSONIFY_EMBED_DIM=384
 ```
+
+Docker Compose binds Postgres to `127.0.0.1:5544`, not all network interfaces.
 
 Use named vaults with the CLI global option instead of editing `.env` for normal
 work:

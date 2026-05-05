@@ -75,7 +75,7 @@ def test_manual_upsert_promotes_extractor_origin(tmp_path: Path, monkeypatch) ->
     """Manual confirmations must pin an extractor-origin row against pruning."""
     db = _init(tmp_path, monkeypatch)
     from personify.models import Entity
-    from personify.services.graph import create_or_get_entity, create_or_get_relationship
+    from personify.services.graph import create_or_get_entity
 
     with Session(db.get_engine(), expire_on_commit=False) as s:
         a = create_or_get_entity(s, type="Project", name="OmniVox", origin="extractor")

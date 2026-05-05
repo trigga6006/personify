@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from personify.db import init_db
 

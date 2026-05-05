@@ -48,7 +48,8 @@
     <section class="shell-content">
       {#if router.route === "dashboard"}<Dashboard />
       {:else if router.route === "exports"}<Exports />
-      {:else if router.route === "browse" || router.route === "items" || router.route === "timeline"}<Browse />
+      {:else if router.route === "browse" || router.route === "items" || router.route === "timeline"}<Browse
+        />
       {:else if router.route === "search"}<Search />
       {:else if router.route === "graph"}<Graph />
       {:else if router.route === "repos"}<Repos />

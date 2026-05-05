@@ -162,14 +162,10 @@ def test_restore_round_trip_preserves_items_and_media(tmp_path, monkeypatch):
     assert len(media_rows) == 1
 
     # The media file should have been copied into the restored vault dir.
+    # Bundled paths preserve vault/<sub>/... structure under the new vault
+    # root, so look up the file by name inside the new vault dir.
     import personify.config as config
-    restored_media = Path(media_rows[0].path)
-    # Stored path is the original absolute path; the file should still
-    # exist there *because* the restore copies it back to the same
-    # absolute location it was bundled from. (Bundled paths preserve
-    # vault/<sub>/... structure under the new vault root.)
-    # For the round-trip assertion, look up the file in the new vault dir
-    # via the relative path inside vault/staging/.
+
     new_vault_dir = config.settings.vault_dir
     candidates = list(new_vault_dir.rglob("note.txt"))
     assert candidates, f"expected note.txt under {new_vault_dir}"
@@ -188,6 +184,65 @@ def test_restore_refuses_to_overwrite_existing_vault(tmp_path, monkeypatch):
     # the seeded data. Should refuse.
     with pytest.raises(BackupError, match="already has rows"):
         restore_vault(out, into_vault="personal")
+
+
+def test_restore_refuses_target_with_only_raw_exports(tmp_path, monkeypatch):
+    """Regression: a target that has registered raw_exports/accounts but no
+    items must still refuse — restore deletes every non-skipped table, so
+    the emptiness gate has to look at every table it would clobber, not
+    just ``items``."""
+    from personify.models import Account, RawExport
+
+    db = _init(tmp_path, monkeypatch, vault_name="personal")
+    _seed_one_item_with_media(db, vault_dir=tmp_path / "vault_personal")
+
+    out = tmp_path / "backup.tar.gz"
+    export_vault(out)
+
+    # Stand up a target vault that has accounts and raw_exports rows but
+    # zero items — the case the old `items`-only gate let through.
+    db2 = _init(tmp_path, monkeypatch, vault_name="half-set-up")
+    with db2.Session(db2.engine, expire_on_commit=False) as s:
+        s.add(Account(handle="someone", display_name="Some One"))
+        s.add(
+            RawExport(
+                source_slug="files",
+                account_handle="someone",
+                original_path="/tmp/x",
+                stored_path="/tmp/x",
+                size_bytes=0,
+                sha256="d" * 64,
+            )
+        )
+        s.commit()
+
+    with pytest.raises(BackupError, match="already has rows"):
+        restore_vault(out, into_vault="half-set-up")
+
+
+def test_restore_allows_freshly_initialized_target(tmp_path, monkeypatch):
+    """A vault that's only been ``init_db()``-seeded (sources table populated
+    by the parser registry, every other table empty) must NOT trip the
+    emptiness gate — that's the normal "create then restore into" path."""
+    db = _init(tmp_path, monkeypatch, vault_name="personal")
+    _seed_one_item_with_media(db, vault_dir=tmp_path / "vault_personal")
+
+    out = tmp_path / "backup.tar.gz"
+    export_vault(out)
+
+    # Initialize the target — this populates `sources` via init_db's
+    # parser-registry seed. Other tables remain empty.
+    _init(tmp_path, monkeypatch, vault_name="fresh-target")
+
+    # Drop the directory so the disk-side guard doesn't fire; we want to
+    # exercise just the DB emptiness check.
+    import shutil
+
+    shutil.rmtree(tmp_path / "vault_fresh-target", ignore_errors=True)
+
+    result = restore_vault(out, into_vault="fresh-target")
+    assert result.vault_name == "fresh-target"
+    assert result.rows_restored > 0
 
 
 def test_restore_refuses_unknown_bundle_format_version(tmp_path, monkeypatch):

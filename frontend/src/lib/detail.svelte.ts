@@ -9,10 +9,25 @@ let kind = $state<DetailKind>(null);
 let id = $state<number | null>(null);
 
 export const detail = {
-  get kind() { return kind; },
-  get id() { return id; },
-  get open() { return kind !== null; },
-  openItem(itemId: number) { kind = "item"; id = itemId; },
-  openEntity(entityId: number) { kind = "entity"; id = entityId; },
-  close() { kind = null; id = null; },
+  get kind() {
+    return kind;
+  },
+  get id() {
+    return id;
+  },
+  get open() {
+    return kind !== null;
+  },
+  openItem(itemId: number) {
+    kind = "item";
+    id = itemId;
+  },
+  openEntity(entityId: number) {
+    kind = "entity";
+    id = entityId;
+  },
+  close() {
+    kind = null;
+    id = null;
+  },
 };

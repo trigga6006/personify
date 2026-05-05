@@ -16,10 +16,17 @@
     loading = true;
     error = null;
     item = null;
-    api.item(itemId)
-      .then((i) => { item = i; })
-      .catch((e) => { error = e instanceof Error ? e.message : String(e); })
-      .finally(() => { loading = false; });
+    api
+      .item(itemId)
+      .then((i) => {
+        item = i;
+      })
+      .catch((e) => {
+        error = e instanceof Error ? e.message : String(e);
+      })
+      .finally(() => {
+        loading = false;
+      });
   });
 </script>
 
@@ -27,7 +34,8 @@
   <div class="detail-title">
     {item?.title || (loading ? "Loading…" : `Item #${itemId}`)}
   </div>
-  <button class="icon-btn" type="button" aria-label="Close" onclick={() => detail.close()}>✕</button>
+  <button class="icon-btn" type="button" aria-label="Close" onclick={() => detail.close()}>✕</button
+  >
 </div>
 
 <div class="detail-body">
@@ -42,15 +50,24 @@
   {:else if item}
     <div class="detail-section-label">Identity</div>
     <dl class="deflist">
-      <dt>id</dt><dd>{item.id}</dd>
-      <dt>source</dt><dd class="plain">{item.source}</dd>
-      <dt>account</dt><dd>{item.account}</dd>
-      <dt>kind</dt><dd class="plain">{item.kind}</dd>
-      <dt>when</dt><dd class="plain">{fmtTs(item.ts)}</dd>
-      <dt>native</dt><dd>{item.native_id ?? "—"}</dd>
-      <dt>export</dt><dd>{item.raw_export_id}</dd>
-      <dt>run</dt><dd>{item.ingestion_run_id ?? "—"}</dd>
-      <dt>hash</dt><dd>{(item.content_hash || "").slice(0, 16)}…</dd>
+      <dt>id</dt>
+      <dd>{item.id}</dd>
+      <dt>source</dt>
+      <dd class="plain">{item.source}</dd>
+      <dt>account</dt>
+      <dd>{item.account}</dd>
+      <dt>kind</dt>
+      <dd class="plain">{item.kind}</dd>
+      <dt>when</dt>
+      <dd class="plain">{fmtTs(item.ts)}</dd>
+      <dt>native</dt>
+      <dd>{item.native_id ?? "—"}</dd>
+      <dt>export</dt>
+      <dd>{item.raw_export_id}</dd>
+      <dt>run</dt>
+      <dd>{item.ingestion_run_id ?? "—"}</dd>
+      <dt>hash</dt>
+      <dd>{(item.content_hash || "").slice(0, 16)}…</dd>
     </dl>
 
     {#if item.tags && item.tags.length}
@@ -66,14 +83,18 @@
       <div class="detail-section-label">Media</div>
       <div class="tagchips">
         {#each item.media as m}
-          <span class="chip"><span class="k">{m.media_type ?? m.type}</span><span>{m.mime ?? ""}</span></span>
+          <span class="chip"
+            ><span class="k">{m.media_type ?? m.type}</span><span>{m.mime ?? ""}</span></span
+          >
         {/each}
       </div>
     {/if}
 
     {#if item.body}
       <div class="detail-section-label">
-        Body <span class="dim" style="text-transform:none;letter-spacing:0;font-weight:400">({item.body.length.toLocaleString()} chars)</span>
+        Body <span class="dim" style="text-transform:none;letter-spacing:0;font-weight:400"
+          >({item.body.length.toLocaleString()} chars)</span
+        >
       </div>
       <pre class="body-pre">{item.body}</pre>
     {:else}
@@ -89,6 +110,16 @@
 </div>
 
 <style>
-  .icon-btn { background: transparent; border: 0; color: var(--text-3); padding: 6px 8px; border-radius: 6px; font-size: 14px; }
-  .icon-btn:hover { background: var(--bg-soft); color: var(--text); }
+  .icon-btn {
+    background: transparent;
+    border: 0;
+    color: var(--text-3);
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 14px;
+  }
+  .icon-btn:hover {
+    background: var(--bg-soft);
+    color: var(--text);
+  }
 </style>

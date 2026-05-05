@@ -7,9 +7,28 @@
   import Skeleton from "$components/Skeleton.svelte";
 
   const ENTITY_TYPES = [
-    "Project", "Person", "Company", "Product", "Repository", "File", "Document",
-    "Email", "Conversation", "Idea", "Task", "Decision", "Tool", "Model", "API",
-    "Dataset", "Domain", "Client", "Transaction", "Event", "Location", "Topic",
+    "Project",
+    "Person",
+    "Company",
+    "Product",
+    "Repository",
+    "File",
+    "Document",
+    "Email",
+    "Conversation",
+    "Idea",
+    "Task",
+    "Decision",
+    "Tool",
+    "Model",
+    "API",
+    "Dataset",
+    "Domain",
+    "Client",
+    "Transaction",
+    "Event",
+    "Location",
+    "Topic",
   ];
 
   let q = $state(router.param("q") ?? "");
@@ -29,7 +48,8 @@
 
   async function search() {
     if (!q.trim()) return;
-    loading = true; error = null;
+    loading = true;
+    error = null;
     router.patch({ q, type: type || null });
     try {
       hits = await api.graphSearchEntities({ q, type: type || undefined, limit: 30 });
@@ -56,7 +76,11 @@
   }
 
   // Map neighborhood nodes to a constellation circle around the center.
-  interface PlottedNode { node: { id: number; type: string; name: string }; x: number; y: number }
+  interface PlottedNode {
+    node: { id: number; type: string; name: string };
+    x: number;
+    y: number;
+  }
   const plotted = $derived.by<PlottedNode[]>(() => {
     if (!neighborhood) return [];
     const others = neighborhood.nodes.filter((n) => n.id !== neighborhood!.center?.id);
@@ -75,12 +99,21 @@
 <div class="page-head">
   <div class="eyebrow">Knowledge graph</div>
   <h1>Graph</h1>
-  <p class="lede">Search the entities the extractor pulled out of your data, then walk the neighborhood. Click any node to dive deeper.</p>
+  <p class="lede">
+    Search the entities the extractor pulled out of your data, then walk the neighborhood. Click any
+    node to dive deeper.
+  </p>
 </div>
 
 <div class="toolbar">
-  <input type="search" class="grow" bind:value={q} placeholder="Search entities by name or alias…"
-         onkeydown={(e) => e.key === "Enter" && search()} autofocus />
+  <input
+    type="search"
+    class="grow"
+    bind:value={q}
+    placeholder="Search entities by name or alias…"
+    onkeydown={(e) => e.key === "Enter" && search()}
+    autofocus
+  />
   <span class="label">Type</span>
   <select bind:value={type}>
     <option value="">any</option>
@@ -94,13 +127,23 @@
 <div class="graph-grid">
   <div class="graph-list">
     {#if loading}
-      <div class="col" style="gap:8px">{#each Array(6) as _}<Skeleton height="40px" radius="8px" />{/each}</div>
+      <div class="col" style="gap:8px">
+        {#each Array(6) as _}<Skeleton height="40px" radius="8px" />{/each}
+      </div>
     {:else if error}
       <div class="error-box">{error}</div>
     {:else if !ran}
-      <Empty icon="◇" title="Search the graph" sub="Try a project name, a person's handle, or a topic. Filter by entity type to narrow the result set." />
+      <Empty
+        icon="◇"
+        title="Search the graph"
+        sub="Try a project name, a person's handle, or a topic. Filter by entity type to narrow the result set."
+      />
     {:else if hits.length === 0}
-      <Empty icon="◇" title="No entities" sub={`No entities for “${q}”${type ? ` of type ${type}` : ""}.`} />
+      <Empty
+        icon="◇"
+        title="No entities"
+        sub={`No entities for “${q}”${type ? ` of type ${type}` : ""}.`}
+      />
     {:else}
       <div class="col" style="gap:6px">
         {#each hits as h (h.id)}
@@ -120,19 +163,32 @@
 
   <div class="graph-panel">
     {#if !center}
-      <Empty icon="◇" title="Pick an entity" sub="Select a result on the left to see its neighborhood, evidence, and suggested follow-up queries." />
+      <Empty
+        icon="◇"
+        title="Pick an entity"
+        sub="Select a result on the left to see its neighborhood, evidence, and suggested follow-up queries."
+      />
     {:else if nbhLoading}
       <Skeleton height="240px" radius="12px" />
     {:else if neighborhood}
       <div class="constellation">
-        <div class="center" style="left:50%;top:50%" onclick={() => detail.openEntity(center!.id)}
-             role="button" tabindex="0">
+        <div
+          class="center"
+          style="left:50%;top:50%"
+          onclick={() => detail.openEntity(center!.id)}
+          role="button"
+          tabindex="0"
+        >
           {center.name}
         </div>
         {#each plotted as p (p.node.id)}
-          <div class="node" style="left:{p.x}%;top:{p.y}%"
-               role="button" tabindex="0"
-               onclick={() => selectEntity(p.node as EntitySummary)}>
+          <div
+            class="node"
+            style="left:{p.x}%;top:{p.y}%"
+            role="button"
+            tabindex="0"
+            onclick={() => selectEntity(p.node as EntitySummary)}
+          >
             {p.node.name}
           </div>
         {/each}
@@ -143,8 +199,12 @@
         </svg>
       </div>
       <div class="row-gap" style="margin-top:14px">
-        <button class="btn btn-primary" type="button" onclick={() => detail.openEntity(center!.id)}>Open detail →</button>
-        <span class="dim" style="font-size:12px">{neighborhood.nodes.length - 1} related · {neighborhood.edges.length} edges</span>
+        <button class="btn btn-primary" type="button" onclick={() => detail.openEntity(center!.id)}
+          >Open detail →</button
+        >
+        <span class="dim" style="font-size:12px"
+          >{neighborhood.nodes.length - 1} related · {neighborhood.edges.length} edges</span
+        >
       </div>
     {/if}
   </div>
@@ -157,13 +217,23 @@
     gap: 22px;
   }
   @media (max-width: 980px) {
-    .graph-grid { grid-template-columns: 1fr; }
+    .graph-grid {
+      grid-template-columns: 1fr;
+    }
   }
   .entity-row {
-    display: flex; align-items: center; gap: 10px;
-    text-align: left; cursor: pointer; padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-align: left;
+    cursor: pointer;
+    padding: 10px 12px;
   }
-  .entity-row .name { font-size: 13.5px; color: var(--text); letter-spacing: -0.005em; }
+  .entity-row .name {
+    font-size: 13.5px;
+    color: var(--text);
+    letter-spacing: -0.005em;
+  }
   .entity-row.active {
     border-color: var(--accent-line);
     background: var(--accent-soft);

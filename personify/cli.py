@@ -362,9 +362,9 @@ def dev(
     console.print("[bold]Docker[/bold]      docker compose up -d")
     subprocess.run(["docker", "compose", "up", "-d"], cwd=root, check=True)
 
-    pnpm = shutil.which("pnpm")
-    if pnpm is None:
-        raise typer.BadParameter("pnpm not found on PATH; install pnpm or run Vite manually.")
+    package_runner = shutil.which("pnpm") or shutil.which("npm")
+    if package_runner is None:
+        raise typer.BadParameter("npm not found on PATH; install Node.js/npm to run the UI.")
 
     backend_running = _is_port_open(h, p) and _backend_health_ok(h, p)
     frontend_running = _is_port_open("127.0.0.1", frontend_port) or _is_port_open(
@@ -382,7 +382,27 @@ def dev(
         str(p),
         "--reload",
     ]
-    frontend_cmd = [pnpm, "exec", "vite", "--host", "localhost", "--port", str(frontend_port)]
+    if Path(package_runner).name.startswith("pnpm"):
+        frontend_cmd = [
+            package_runner,
+            "exec",
+            "vite",
+            "--host",
+            "localhost",
+            "--port",
+            str(frontend_port),
+        ]
+    else:
+        frontend_cmd = [
+            package_runner,
+            "run",
+            "dev",
+            "--",
+            "--host",
+            "localhost",
+            "--port",
+            str(frontend_port),
+        ]
     frontend_env = os.environ.copy()
     frontend_env["PERSONIFY_DEV_API_ORIGIN"] = f"http://{display_host}:{p}"
     frontend_env["PERSONIFY_DEV_FRONTEND_PORT"] = str(frontend_port)

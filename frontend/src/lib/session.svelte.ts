@@ -47,16 +47,38 @@ async function refresh() {
 }
 
 export const session = {
-  get parsers() { return parsers; },
-  get accounts() { return accounts; },
-  get sources() { return sources; },
-  get itemsPerSource() { return itemsPerSource; },
-  get vaults() { return vaults; },
-  get activeVault() { return vaults?.active ?? null; },
-  get totalItems() { return totalItems; },
-  get totalExports() { return totalExports; },
-  get totalRuns() { return totalRuns; },
-  get loaded() { return loaded; },
-  get loading() { return loading; },
+  get parsers() {
+    return parsers;
+  },
+  get accounts() {
+    return accounts;
+  },
+  get sources() {
+    return sources;
+  },
+  get itemsPerSource() {
+    return itemsPerSource;
+  },
+  get vaults() {
+    return vaults;
+  },
+  get activeVault() {
+    return vaults?.active ?? null;
+  },
+  get totalItems() {
+    return totalItems;
+  },
+  get totalExports() {
+    return totalExports;
+  },
+  get totalRuns() {
+    return totalRuns;
+  },
+  get loaded() {
+    return loaded;
+  },
+  get loading() {
+    return loading;
+  },
   refresh,
 };

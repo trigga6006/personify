@@ -25,8 +25,12 @@
   const fresh = $derived(total - dupes);
 
   async function doScan() {
-    if (!path.trim()) { toasts.err("Path is required."); return; }
-    scanning = true; error = null;
+    if (!path.trim()) {
+      toasts.err("Path is required.");
+      return;
+    }
+    scanning = true;
+    error = null;
     try {
       const res = await api.repoScan({ path: path.trim(), recursive });
       scan = res.repos;
@@ -41,7 +45,8 @@
 
   async function doRegister() {
     if (!fresh) return;
-    registering = true; error = null;
+    registering = true;
+    error = null;
     try {
       const res = await api.repoRegister({
         path: path.trim(),
@@ -65,15 +70,23 @@
 <div class="page-head">
   <div class="eyebrow">Bulk register</div>
   <h1>Repo intake</h1>
-  <p class="lede">Scan a folder of cloned repos, see what's new vs already imported, then register everything in one shot. Designed for the code-corpus workflow.</p>
+  <p class="lede">
+    Scan a folder of cloned repos, see what's new vs already imported, then register everything in
+    one shot. Designed for the code-corpus workflow.
+  </p>
 </div>
 
 <div class="hover-tile" style="max-width:820px;margin-bottom:18px">
   <div class="field-row">
     <label for="ri-path">Folder</label>
     <div class="inputs">
-      <input id="ri-path" type="text" bind:value={path}
-             placeholder="C:\Users\you\Documents\repo-intake" onkeydown={(e) => e.key === "Enter" && doScan()} />
+      <input
+        id="ri-path"
+        type="text"
+        bind:value={path}
+        placeholder="C:\Users\you\Documents\repo-intake"
+        onkeydown={(e) => e.key === "Enter" && doScan()}
+      />
       <span class="help">Parent directory containing one or more cloned repos.</span>
     </div>
   </div>
@@ -90,7 +103,15 @@
       {scanning ? "Scanning…" : "Scan"}
     </button>
     {#if didScan}
-      <button class="btn btn-ghost" type="button" onclick={() => { scan = []; results = []; didScan = false; }}>Clear</button>
+      <button
+        class="btn btn-ghost"
+        type="button"
+        onclick={() => {
+          scan = [];
+          results = [];
+          didScan = false;
+        }}>Clear</button
+      >
     {/if}
   </div>
 </div>
@@ -99,7 +120,11 @@
 
 {#if didScan}
   {#if total === 0}
-    <Empty icon="⌘" title="No git repos found" sub="Check the path or toggle “Recurse into subdirectories”." />
+    <Empty
+      icon="⌘"
+      title="No git repos found"
+      sub="Check the path or toggle “Recurse into subdirectories”."
+    />
   {:else}
     <div class="statgrid" style="margin-bottom:14px">
       <StatCard label="Repos found" value={total} />
@@ -134,7 +159,9 @@
 
     {#if fresh > 0}
       <div class="hover-tile" style="max-width:820px">
-        <div class="section-label" style="margin-top:0">Register {fresh} new repo{fresh === 1 ? "" : "s"}</div>
+        <div class="section-label" style="margin-top:0">
+          Register {fresh} new repo{fresh === 1 ? "" : "s"}
+        </div>
         <div class="field-row">
           <label for="ri-acct">Account</label>
           <div class="inputs">
@@ -145,7 +172,12 @@
         <div class="field-row">
           <label for="ri-notes">Notes</label>
           <div class="inputs">
-            <input id="ri-notes" type="text" bind:value={notes} placeholder="batch label, e.g. 2026-04 OSS pull" />
+            <input
+              id="ri-notes"
+              type="text"
+              bind:value={notes}
+              placeholder="batch label, e.g. 2026-04 OSS pull"
+            />
           </div>
         </div>
         <div class="field-row">
@@ -176,7 +208,9 @@
             <td><span class="pill {pillClassForStatus(r.status)}">{r.status}</span></td>
             <td class="mono dim">{r.export_id ?? "—"}</td>
             <td class="mono dim">{r.run_id ?? "—"}</td>
-            <td class="mono dim" style="max-width:340px;overflow:hidden;text-overflow:ellipsis">{r.error ?? ""}</td>
+            <td class="mono dim" style="max-width:340px;overflow:hidden;text-overflow:ellipsis"
+              >{r.error ?? ""}</td
+            >
           </tr>
         {/each}
       </tbody>

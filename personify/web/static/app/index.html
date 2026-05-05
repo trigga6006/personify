@@ -7,10 +7,24 @@
     <link rel="preconnect" href="https://api.fontshare.com" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <script type="module" crossorigin src="/app/assets/index-CO1BQYGt.js"></script>
-    <link rel="stylesheet" crossorigin href="/app/assets/index-zORgPGjL.css">
+    <script>
+      // Set theme synchronously to prevent FOUC on initial paint.
+      (function () {
+        try {
+          var t = localStorage.getItem("personify-theme");
+          document.documentElement.setAttribute(
+            "data-theme",
+            t === "light" ? "light" : "dark"
+          );
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="/app/assets/index-GlbDu3aV.js"></script>
+    <link rel="stylesheet" crossorigin href="/app/assets/index-DFUK8vhX.css">
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app"></div>
   </body>
 </html>

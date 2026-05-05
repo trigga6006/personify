@@ -4,25 +4,39 @@
  * Filters in the hash so any view is shareable as a URL.
  */
 
-interface RouterState { route: string; query: URLSearchParams }
+interface RouterState {
+  route: string;
+  query: URLSearchParams;
+}
 
 function parse(): RouterState {
   const h = window.location.hash || "#/dashboard";
   const stripped = h.replace(/^#\//, "");
   const idx = stripped.indexOf("?");
   if (idx === -1) return { route: stripped || "dashboard", query: new URLSearchParams() };
-  return { route: stripped.slice(0, idx) || "dashboard", query: new URLSearchParams(stripped.slice(idx + 1)) };
+  return {
+    route: stripped.slice(0, idx) || "dashboard",
+    query: new URLSearchParams(stripped.slice(idx + 1)),
+  };
 }
 
 let state = $state<RouterState>(parse());
 
-window.addEventListener("hashchange", () => { state = parse(); });
+window.addEventListener("hashchange", () => {
+  state = parse();
+});
 
 export const router = {
-  get route() { return state.route; },
-  get query() { return state.query; },
+  get route() {
+    return state.route;
+  },
+  get query() {
+    return state.query;
+  },
   /** Get one query param. */
-  param(key: string): string | null { return state.query.get(key); },
+  param(key: string): string | null {
+    return state.query.get(key);
+  },
   /** Replace the current hash. */
   go(route: string, query: Record<string, string | null | undefined> = {}) {
     const qs = new URLSearchParams();

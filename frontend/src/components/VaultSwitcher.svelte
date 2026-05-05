@@ -9,8 +9,12 @@
   let open = $state(false);
   let trigger: HTMLElement | undefined;
 
-  function close() { open = false; }
-  function toggle() { open = !open; }
+  function close() {
+    open = false;
+  }
+  function toggle() {
+    open = !open;
+  }
 
   onMount(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -23,7 +27,10 @@
   });
 
   async function activate(name: string) {
-    if (name === session.activeVault?.name) { close(); return; }
+    if (name === session.activeVault?.name) {
+      close();
+      return;
+    }
     try {
       await api.activateVault(name);
       toasts.ok(`Switched to ${name}`);
@@ -34,11 +41,20 @@
     }
   }
 
-  function newVault() { close(); modal.open("create-vault"); }
+  function newVault() {
+    close();
+    modal.open("create-vault");
+  }
 </script>
 
 <div class="vault-switch" bind:this={trigger}>
-  <button class="vault-trigger" type="button" aria-haspopup="true" aria-expanded={open} onclick={toggle}>
+  <button
+    class="vault-trigger"
+    type="button"
+    aria-haspopup="true"
+    aria-expanded={open}
+    onclick={toggle}
+  >
     <span class="vault-logo" aria-hidden="true">
       <img src={logoUrl} alt="Personify" />
     </span>
@@ -54,7 +70,7 @@
         {#each session.vaults.vaults as v (v.name)}
           <button type="button" onclick={() => activate(v.name)} role="menuitem">
             <span class="name">{v.name}</span>
-            <span class="meta">{v.active ? "active" : (v.exists ? "—" : "missing")}</span>
+            <span class="meta">{v.active ? "active" : v.exists ? "—" : "missing"}</span>
           </button>
         {/each}
       {:else}

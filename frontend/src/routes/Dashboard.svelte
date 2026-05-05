@@ -27,7 +27,7 @@
   });
 
   const sourceEntries = $derived(
-    Object.entries(session.itemsPerSource).sort((a, b) => b[1] - a[1])
+    Object.entries(session.itemsPerSource).sort((a, b) => b[1] - a[1]),
   );
   const maxSource = $derived(sourceEntries.length ? sourceEntries[0][1] : 0);
   const sourceLabels = $derived(Object.fromEntries(session.sources.map((s) => [s.slug, s.label])));
@@ -42,7 +42,11 @@
 <div class="statgrid">
   <StatCard label="Items" value={session.totalItems} loading={!session.loaded} />
   <StatCard label="Exports" value={session.totalExports} loading={!session.loaded} />
-  <StatCard label="Sources" value={Object.keys(session.itemsPerSource).length} loading={!session.loaded} />
+  <StatCard
+    label="Sources"
+    value={Object.keys(session.itemsPerSource).length}
+    loading={!session.loaded}
+  />
   <StatCard label="Accounts" value={session.accounts.length} loading={!session.loaded} />
   <StatCard label="Runs" value={session.totalRuns} loading={!session.loaded} />
 </div>
@@ -101,7 +105,11 @@
           <tr>
             <td class="mono">{r.id}</td>
             <td class="mono">{r.raw_export_id}</td>
-            <td>{r.parser ?? ""}<span class="dim mono" style="font-size:11px"> · v{r.parser_version ?? ""}</span></td>
+            <td
+              >{r.parser ?? ""}<span class="dim mono" style="font-size:11px">
+                · v{r.parser_version ?? ""}</span
+              ></td
+            >
             <td><StatusPill status={r.status} /></td>
             <td class="right mono">{r.items_seen.toLocaleString()}</td>
             <td class="right mono">{r.items_inserted.toLocaleString()}</td>

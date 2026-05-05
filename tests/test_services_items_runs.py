@@ -71,7 +71,7 @@ def test_list_items_ordering_is_stable(tmp_path, monkeypatch, fixtures_dir):
 
 
 def test_list_timeline_filters_by_date_and_excludes_undated(tmp_path, monkeypatch, fixtures_dir):
-    db = _init(tmp_path, monkeypatch)
+    _init(tmp_path, monkeypatch)
     from personify.services.ingest import ingest_export
     from personify.services.items import list_timeline
     from personify.services.register import register_export

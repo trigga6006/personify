@@ -155,6 +155,98 @@ def test_re_run_after_failure_dedups_and_completes(tmp_path, monkeypatch):
     assert run.items_skipped == 100
 
 
+def test_failed_batch_leaves_no_orphan_normalized_files(tmp_path, monkeypatch):
+    """Regression: normalized JSON snapshots must be written AFTER the
+    batch commits, so a rolled-back batch never leaves
+    ``normalized/item_<id>.json`` files keyed to ids that didn't persist.
+
+    With batch size 100 and a parser that crashes mid-second-batch, the
+    first batch (items 1-100) commits and writes 100 snapshots. The
+    second batch rolls back and must leave zero new snapshots — total
+    on disk should be exactly 100.
+    """
+    db = _init(tmp_path, monkeypatch)
+
+    import personify.services.ingest as ingest_mod
+    from personify.services.ingest import ingest_export
+    from personify.parsers import PARSERS
+
+    raw_id = _seed_raw_export(db, vault_dir=tmp_path / "vault")
+
+    monkeypatch.setitem(PARSERS, "files", _FlakyParser)
+    monkeypatch.setattr(_FlakyParser, "fail_after", 137, raising=False)
+    monkeypatch.setattr(_FlakyParser, "total", 250, raising=False)
+    monkeypatch.setattr(ingest_mod, "INGEST_BATCH_SIZE", 100, raising=False)
+
+    with pytest.raises(RuntimeError):
+        ingest_export(raw_id)
+
+    normalized_root = tmp_path / "vault" / "normalized"
+    snapshot_count = sum(1 for _ in normalized_root.rglob("item_*.json"))
+    assert snapshot_count == 100, (
+        f"expected exactly 100 snapshots (one per committed item), got "
+        f"{snapshot_count} — the in-flight batch's snapshots leaked despite "
+        f"the rollback"
+    )
+
+
+def test_snapshot_write_failure_does_not_clobber_committed_run_counters(
+    tmp_path, monkeypatch
+):
+    """Regression for a bug Codex caught: if ``normalized_path_for(...).
+    write_text`` raises after the batch DB commit, the outer exception
+    handler must NOT overwrite the just-committed run counters with the
+    stale outer-scope values.
+
+    Reproduces by forcing every snapshot write to fail. The DB rows still
+    commit (2 items in the small batch), and the run must end as ``ok``
+    with ``items_inserted == 2`` — not ``error`` with ``items_inserted == 0``.
+    """
+    db = _init(tmp_path, monkeypatch)
+
+    import personify.services.ingest as ingest_mod
+    from personify.services.ingest import ingest_export
+    from personify.models import IngestionRun
+    from personify.parsers import PARSERS
+    from sqlmodel import select
+
+    raw_id = _seed_raw_export(db, vault_dir=tmp_path / "vault")
+
+    monkeypatch.setitem(PARSERS, "files", _FlakyParser)
+    monkeypatch.setattr(_FlakyParser, "fail_after", None, raising=False)
+    monkeypatch.setattr(_FlakyParser, "total", 2, raising=False)
+    monkeypatch.setattr(ingest_mod, "INGEST_BATCH_SIZE", 100, raising=False)
+
+    # Force the snapshot write to fail. The DB commit must already be
+    # durable by this point; the question is whether the run counters
+    # survive the disk-write failure.
+    def _boom(self, *args, **kwargs):
+        raise OSError("simulated disk full")
+
+    monkeypatch.setattr("pathlib.Path.write_text", _boom, raising=True)
+
+    # Ingest must complete cleanly — write_text failures are now logged,
+    # not propagated.
+    run = ingest_export(raw_id)
+
+    assert run.status == "ok", f"expected ok, got {run.status} (error={run.error})"
+    assert run.items_seen == 2
+    assert run.items_inserted == 2
+    assert _count_items(db) == 2
+
+    # Sanity: re-fetch the run row from the DB and check the counters
+    # weren't overwritten by a later step.
+    with db.Session(db.engine) as s:
+        row = s.exec(
+            select(IngestionRun).where(IngestionRun.raw_export_id == raw_id)
+        ).first()
+    assert row is not None
+    assert row.items_inserted == 2, (
+        f"expected items_inserted=2 (DB-committed), got {row.items_inserted} — "
+        f"snapshot write failure clobbered the durable counter"
+    )
+
+
 def test_run_row_reflects_committed_count_on_failure(tmp_path, monkeypatch):
     """The IngestionRun row's items_inserted should equal what's actually
     in the DB after a crash — not zero (old behavior) and not the

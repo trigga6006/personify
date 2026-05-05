@@ -53,6 +53,17 @@ def postgres_db_exists(name: str) -> bool:
         admin_engine.dispose()
 
 
+def _redact_db_url(db_url: str) -> str:
+    """Hide the password component before sending the URL out of the API.
+
+    The vault is local-only, but the password still ends up in browser
+    devtools/network logs and any future remote-MCP transcript, so we
+    don't ship it. SQLAlchemy's ``render_as_string(hide_password=True)``
+    replaces the password with ``***`` while keeping the rest legible.
+    """
+    return make_url(db_url).render_as_string(hide_password=True)
+
+
 def _vault_info(name: str) -> dict[str, Any]:
     slug = normalize_vault_name(name)
     vault_dir = vault_dir_for_name(slug)
@@ -61,7 +72,7 @@ def _vault_info(name: str) -> dict[str, Any]:
         "name": slug,
         "active": slug == settings.vault_name,
         "db_name": db_name_for_vault(slug),
-        "db_url": db_url,
+        "db_url": _redact_db_url(db_url),
         "vault_dir": str(vault_dir),
         "dir_exists": vault_dir.exists(),
         "db_exists": postgres_db_exists(slug),

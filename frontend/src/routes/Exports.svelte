@@ -20,9 +20,13 @@
   async function load() {
     loading = true;
     error = null;
-    try { rows = await api.exports(); }
-    catch (e) { error = e instanceof Error ? e.message : String(e); }
-    finally { loading = false; }
+    try {
+      rows = await api.exports();
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    } finally {
+      loading = false;
+    }
   }
 
   onMount(load);
@@ -34,7 +38,8 @@
   }
 
   function toastForRun(run: RunSummary) {
-    if (run.status === "ok") toasts.ok(`Done · seen ${run.items_seen}, inserted ${run.items_inserted}`);
+    if (run.status === "ok")
+      toasts.ok(`Done · seen ${run.items_seen}, inserted ${run.items_inserted}`);
     else toasts.err(`Run ${run.status}`);
   }
 
@@ -42,11 +47,18 @@
     busy[row.id] = replace ? "replace" : "ingest";
     const verb = replace ? "Replacing" : "Ingesting";
     const usePipeline = withEmbeddings || withGraph;
-    const suffix = usePipeline ? ` (+ ${[withEmbeddings && "embeddings", withGraph && "graph"].filter(Boolean).join(", ")})` : "";
+    const suffix = usePipeline
+      ? ` (+ ${[withEmbeddings && "embeddings", withGraph && "graph"].filter(Boolean).join(", ")})`
+      : "";
     toasts.info(`${verb} export ${row.id}${suffix}…`);
     try {
       if (usePipeline) {
-        const res = await api.pipeline({ export_id: row.id, replace, with_embeddings: withEmbeddings, with_graph: withGraph });
+        const res = await api.pipeline({
+          export_id: row.id,
+          replace,
+          with_embeddings: withEmbeddings,
+          with_graph: withGraph,
+        });
         summarizePipeline(res.pipeline);
       } else {
         const res = await api.ingest({ export_id: row.id, replace });
@@ -69,7 +81,9 @@
       const runs = res.runs ?? [];
       if (!runs.length) toasts.info("No pending exports.");
       else toasts.ok(`${runs.length} run(s) completed.`);
-    } catch (e) { toasts.err(e instanceof Error ? e.message : String(e)); }
+    } catch (e) {
+      toasts.err(e instanceof Error ? e.message : String(e));
+    }
     await Promise.all([load(), session.refresh()]);
   }
 </script>
@@ -77,16 +91,27 @@
 <div class="page-head">
   <div class="eyebrow">Raw exports</div>
   <h1>Exports</h1>
-  <p class="lede">Every file the vault has been told about. Standard ingest is always run; embeddings and graph extraction are opt-in stages you can re-run later.</p>
+  <p class="lede">
+    Every file the vault has been told about. Standard ingest is always run; embeddings and graph
+    extraction are opt-in stages you can re-run later.
+  </p>
 </div>
 
 <div class="row-gap" style="margin-bottom:16px">
-  <button class="btn btn-primary" type="button" onclick={() => modal.open("add-export")}>+ New export</button>
+  <button class="btn btn-primary" type="button" onclick={() => modal.open("add-export")}
+    >+ New export</button
+  >
   <button class="btn" type="button" onclick={ingestAllPending}>▶ Ingest all pending</button>
-  <button class="btn btn-ghost" type="button" onclick={() => Promise.all([load(), session.refresh()])}>↻ Refresh</button>
+  <button
+    class="btn btn-ghost"
+    type="button"
+    onclick={() => Promise.all([load(), session.refresh()])}>↻ Refresh</button
+  >
   <span class="spacer"></span>
   <span class="dim" style="font-size:11.5px">When ingesting:</span>
-  <label class="checkbox-row"><input type="checkbox" bind:checked={withEmbeddings} /> embeddings</label>
+  <label class="checkbox-row"
+    ><input type="checkbox" bind:checked={withEmbeddings} /> embeddings</label
+  >
   <label class="checkbox-row"><input type="checkbox" bind:checked={withGraph} /> graph</label>
 </div>
 
@@ -128,18 +153,35 @@
             <td class="right mono">{r.items.toLocaleString()}</td>
             <td>
               <div class="stagestrip">
-                <div class="chip"><span class="name">ingest</span><StagePill stage={r.pipeline_stages.ingest} /></div>
-                <div class="chip"><span class="name">embed</span><StagePill stage={r.pipeline_stages.embed} /></div>
-                <div class="chip"><span class="name">graph</span><StagePill stage={r.pipeline_stages.graph} /></div>
+                <div class="chip">
+                  <span class="name">ingest</span><StagePill stage={r.pipeline_stages.ingest} />
+                </div>
+                <div class="chip">
+                  <span class="name">embed</span><StagePill stage={r.pipeline_stages.embed} />
+                </div>
+                <div class="chip">
+                  <span class="name">graph</span><StagePill stage={r.pipeline_stages.graph} />
+                </div>
               </div>
             </td>
             <td class="mono dim" title={r.received_at ?? ""}>{fmtRel(r.received_at)}</td>
             <td class="actions">
-              <button class="btn btn-sm" disabled={!!busy[r.id]} onclick={() => ingestOne(r, false)}>
-                {#if busy[r.id] === "ingest"}<span class="spinner spinner-xs"></span> Ingesting…{:else}▶ Ingest{/if}
+              <button
+                class="btn btn-sm"
+                disabled={!!busy[r.id]}
+                onclick={() => ingestOne(r, false)}
+              >
+                {#if busy[r.id] === "ingest"}<span class="spinner spinner-xs"></span> Ingesting…{:else}▶
+                  Ingest{/if}
               </button>
-              <button class="btn btn-sm" disabled={!!busy[r.id]} onclick={() => ingestOne(r, true)} title="Reset & re-ingest">
-                {#if busy[r.id] === "replace"}<span class="spinner spinner-xs"></span> Replacing…{:else}⟳ Replace{/if}
+              <button
+                class="btn btn-sm"
+                disabled={!!busy[r.id]}
+                onclick={() => ingestOne(r, true)}
+                title="Reset & re-ingest"
+              >
+                {#if busy[r.id] === "replace"}<span class="spinner spinner-xs"></span> Replacing…{:else}⟳
+                  Replace{/if}
               </button>
             </td>
           </tr>
@@ -150,5 +192,9 @@
 {/if}
 
 <style>
-  .spinner-xs { width: 11px; height: 11px; border-width: 2px; }
+  .spinner-xs {
+    width: 11px;
+    height: 11px;
+    border-width: 2px;
+  }
 </style>

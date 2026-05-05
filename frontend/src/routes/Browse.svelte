@@ -14,14 +14,15 @@
   const source = $derived(router.param("source") ?? "");
   const account = $derived(router.param("account") ?? "");
   const kind = $derived(router.param("kind") ?? "");
-  const view = $derived<ViewMode>(((router.param("view") as ViewMode | null) ?? "table"));
+  const view = $derived<ViewMode>((router.param("view") as ViewMode | null) ?? "table");
 
   let data = $state<ItemsResponse | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
 
   async function load() {
-    loading = true; error = null;
+    loading = true;
+    error = null;
     try {
       data = await api.items({
         source: source || undefined,
@@ -37,15 +38,29 @@
   }
 
   onMount(load);
-  $effect(() => { void source; void account; void kind; void view; void load(); });
+  $effect(() => {
+    void source;
+    void account;
+    void kind;
+    void view;
+    void load();
+  });
 
-  function patch(p: Record<string, string | null>) { router.patch(p); }
-  function clearAll() { router.go("browse"); }
+  function patch(p: Record<string, string | null>) {
+    router.patch(p);
+  }
+  function clearAll() {
+    router.go("browse");
+  }
 
   const hasFilters = $derived(!!(source || account || kind));
 
   // Timeline grouping
-  interface DayBucket { key: string; label: string; events: ItemRow[] }
+  interface DayBucket {
+    key: string;
+    label: string;
+    events: ItemRow[];
+  }
   const days = $derived.by<DayBucket[]>(() => {
     if (!data) return [];
     const groups = new Map<string, ItemRow[]>();
@@ -67,25 +82,38 @@
 <div class="page-head">
   <div class="eyebrow">Items + timeline</div>
   <h1>Browse</h1>
-  <p class="lede">Normalized items across every source. Filter, then choose how you want to read them. The URL captures everything — share it.</p>
+  <p class="lede">
+    Normalized items across every source. Filter, then choose how you want to read them. The URL
+    captures everything — share it.
+  </p>
 </div>
 
 <div class="toolbar">
   <span class="label">Source</span>
-  <select value={source} onchange={(e) => patch({ source: (e.currentTarget as HTMLSelectElement).value || null })}>
+  <select
+    value={source}
+    onchange={(e) => patch({ source: (e.currentTarget as HTMLSelectElement).value || null })}
+  >
     <option value="">all</option>
     {#each session.sources as s (s.slug)}<option value={s.slug}>{s.label}</option>{/each}
   </select>
 
   <span class="label">Account</span>
-  <select value={account} onchange={(e) => patch({ account: (e.currentTarget as HTMLSelectElement).value || null })}>
+  <select
+    value={account}
+    onchange={(e) => patch({ account: (e.currentTarget as HTMLSelectElement).value || null })}
+  >
     <option value="">all</option>
     {#each session.accounts as a (a.handle)}<option value={a.handle}>{a.handle}</option>{/each}
   </select>
 
   <span class="label">Kind</span>
-  <input type="text" placeholder="any" value={kind}
-         onchange={(e) => patch({ kind: (e.currentTarget as HTMLInputElement).value || null })} />
+  <input
+    type="text"
+    placeholder="any"
+    value={kind}
+    onchange={(e) => patch({ kind: (e.currentTarget as HTMLInputElement).value || null })}
+  />
 
   {#if hasFilters}
     <button class="btn btn-ghost btn-sm" type="button" onclick={clearAll}>Clear</button>
@@ -94,8 +122,20 @@
   <span class="spacer"></span>
 
   <div class="seg" role="tablist">
-    <button type="button" role="tab" class:on={view === "table"} aria-selected={view === "table"} onclick={() => patch({ view: "table" })}>≡ Table</button>
-    <button type="button" role="tab" class:on={view === "timeline"} aria-selected={view === "timeline"} onclick={() => patch({ view: "timeline" })}>⌚ Timeline</button>
+    <button
+      type="button"
+      role="tab"
+      class:on={view === "table"}
+      aria-selected={view === "table"}
+      onclick={() => patch({ view: "table" })}>≡ Table</button
+    >
+    <button
+      type="button"
+      role="tab"
+      class:on={view === "timeline"}
+      aria-selected={view === "timeline"}
+      onclick={() => patch({ view: "timeline" })}>⌚ Timeline</button
+    >
   </div>
 </div>
 
@@ -115,7 +155,13 @@
   </div>
 
   {#if data.total === 0}
-    <Empty icon="≡" title="Nothing matches" sub={hasFilters ? "Try clearing one of the filters above." : "Register an export to get started."} />
+    <Empty
+      icon="≡"
+      title="Nothing matches"
+      sub={hasFilters
+        ? "Try clearing one of the filters above."
+        : "Register an export to get started."}
+    />
   {:else if view === "table"}
     <div class="tablecard">
       <table>

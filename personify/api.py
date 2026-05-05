@@ -13,15 +13,8 @@ from sqlmodel import Session, select
 from personify import __version__
 from personify.db import get_session, init_db
 from personify.models import (
-    Entity,
-    EntityAlias,
-    EntityEvidence,
-    Item,
-    ItemMedia,
-    ItemText,
     RelationshipEvidence,
     Source,
-    Tag,
 )
 from personify.services.graph import (
     add_entity_alias,
@@ -41,28 +34,58 @@ from personify.services.media import (
     MediaUnavailable,
     resolve_media,
 )
+from personify.services.mcp_runner import GatedMCPApp
 from personify.services.search import semantic_search, text_search
 from personify.services.stats import collect_stats
 from personify.web.routes import STATIC_DIR, router as web_router
+
+#: Last error from ``init_db()`` at startup, surfaced via ``/health``.
+#: ``None`` once init succeeds. Stored at module scope so the health
+#: endpoint can report it without a global request-time check.
+_init_error: str | None = None
+
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     """Apply create_all + idempotent column migrations on every server start.
 
     Schema additions (new tables, new columns) take effect on next server
-    restart without the user re-running `vault init`. Failures are swallowed
-    so the process still boots — they'll surface when a request hits the DB.
+    restart without the user re-running `vault init`. We let the process
+    boot even if init fails, but record the error so ``/health`` reports
+    ``status: degraded`` instead of pretending everything is fine — that
+    way ops/monitoring sees the failure immediately rather than waiting
+    for the first request that hits the DB.
+
+    Also drives the FastMCP streamable-HTTP session manager. FastAPI does
+    not propagate lifespans to mounted ASGI sub-apps, so we have to enter
+    its context manually here. The session manager runs for the entire
+    process lifetime — the start/stop *button* in the UI flips the
+    ``GatedMCPApp`` gate, not this manager. Tearing the manager down on
+    every toggle would add cold-start latency for no benefit.
     """
+    global _init_error
     try:
         init_db()
-    except Exception:  # noqa: BLE001
-        pass
-    yield
+        _init_error = None
+    except Exception as e:  # noqa: BLE001 — captured for /health
+        _init_error = repr(e)
+
+    from personify.mcp.server import mcp as _mcp
+
+    async with _mcp.session_manager.run():
+        yield
 
 
 app = FastAPI(title="Personify Vault API", version=__version__, lifespan=_lifespan)
 app.include_router(web_router)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# MCP streamable-HTTP transport, wrapped in a gate that the UI can toggle.
+# Same FastMCP instance the stdio entrypoint serves, just over HTTP at
+# /mcp/. Off by default — the user clicks "Start" in Settings to open it.
+from personify.mcp.server import mcp as _mcp  # noqa: E402
+
+app.mount("/mcp", GatedMCPApp(_mcp.streamable_http_app()))
 
 # Mount the new Svelte/TS frontend at /app if it has been built. The build
 # step writes to personify/web/static/app/ via vite.config.ts. Mount is
@@ -104,6 +127,8 @@ class CreateRelationshipRequest(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, Any]:
+    if _init_error is not None:
+        return {"status": "degraded", "version": __version__, "error": _init_error}
     return {"status": "ok", "version": __version__}
 
 

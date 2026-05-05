@@ -206,13 +206,22 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* Faint scanline + grain overlay for terminal atmosphere. */
-body::before {
+/* Scanline + dot-grid texture, available as an opt-in utility.
+ * Previously applied site-wide via body::before; that read as visual
+ * noise on a long-form data UI, so it's now off by default. Add the
+ * `.grain` class (or `.grain-accent` for stronger contrast) to any
+ * container that wants the terminal atmosphere — hero cards, empty
+ * states, the graph backdrop, etc. */
+.grain {
+  position: relative;
+  isolation: isolate;
+}
+.grain::before {
   content: "";
-  position: fixed;
+  position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 100;
+  z-index: 0;
   background-image:
     repeating-linear-gradient(
       0deg,
@@ -229,11 +238,13 @@ body::before {
   background-size: auto, 4px 4px;
   mix-blend-mode: screen;
 }
-
-[data-theme="light"] body::before {
-  /* On paper, screen-blend dark-on-light makes dust visible — switch
-   * to multiply so the same atmospheric grain reads on cream too. */
+[data-theme="light"] .grain::before {
+  /* Multiply blends the dust into cream paper instead of bleaching it. */
   mix-blend-mode: multiply;
+}
+.grain > * {
+  position: relative;
+  z-index: 1;
 }
 
 button {

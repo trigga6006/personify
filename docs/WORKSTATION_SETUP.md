@@ -3,11 +3,22 @@
 This repo is configured for a local-first vault on Windows with Docker Desktop
 running Postgres 17 + pgvector.
 
+Postgres is bound to localhost only (`127.0.0.1:5544`) so it is reachable from
+this machine but not advertised on the LAN. The database password comes from
+`.env`; copy `.env.example` on first setup and replace the example password if
+this vault will hold real personal data.
+
 ## Daily Start
 
 ```powershell
-docker compose up -d
-.\.venv\Scripts\vault init
+npm start
+```
+
+If this is the first run on a fresh clone:
+
+```powershell
+npm run setup
+npm start
 ```
 
 `vault init` is safe to rerun. It creates the vault folders, enables pgvector,

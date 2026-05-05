@@ -4,11 +4,11 @@ services:
     container_name: personify-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: personify
-      POSTGRES_PASSWORD: personify
-      POSTGRES_DB: personify
+      POSTGRES_USER: ${PERSONIFY_DB_USER:-personify}
+      POSTGRES_PASSWORD: ${PERSONIFY_DB_PASSWORD:-personify-local-dev-only}
+      POSTGRES_DB: ${PERSONIFY_DB_NAME:-personify}
     ports:
-      - "5544:5432"
+      - "127.0.0.1:5544:5432"
     volumes:
       - personify_pg:/var/lib/postgresql/data
     healthcheck:
