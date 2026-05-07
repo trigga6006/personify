@@ -113,9 +113,8 @@ def _iter_ics_events(path: Path) -> Iterator[ParsedItem]:
         start_raw = fields.get("DTSTART")
         end_raw = fields.get("DTEND")
         start = _parse_ics_dt(start_raw) if start_raw else None
-        end = _parse_ics_dt(end_raw) if end_raw else None
         native_id = uid or f"ics-{hashlib.sha256(content.encode()).hexdigest()[:16]}"
-        body = f"{summary}\n{fields.get('DESCRIPTION','')}`".strip()
+        body = f"{summary}\n{fields.get('DESCRIPTION', '')}".strip()
         yield ParsedItem(
             kind="calendar_event",
             title=summary,
