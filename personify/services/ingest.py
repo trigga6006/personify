@@ -284,6 +284,9 @@ def ingest_export(raw_export_id: int) -> IngestionRun:
             run.items_inserted = inserted
             run.items_skipped = skipped
             run.status = "ok"
+            report = getattr(parser, "last_report", None)
+            if isinstance(report, dict):
+                run.metadata_json = {**(run.metadata_json or {}), "google_takeout_report": report}
             run.finished_at = datetime.now(timezone.utc)
     except Exception as e:  # noqa: BLE001
         error = repr(e)

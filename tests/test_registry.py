@@ -11,6 +11,7 @@ def test_all_sources_registered() -> None:
         "github",
         "files",
         "twitter",
+        "google_takeout",
     }
 
 
