@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { run, ensureVenv, venvPython } from "./lib.mjs";
+import { run, ensureDockerRunning, ensureVenv, venvPython } from "./lib.mjs";
 
 run("node", ["scripts/setup-env.mjs"]);
 ensureVenv();
@@ -11,6 +11,7 @@ if (!existsSync("frontend/node_modules")) {
   run("npm", ["--prefix", "frontend", "install"]);
 }
 
+ensureDockerRunning();
 run("docker", ["compose", "up", "-d"]);
 run(venvPython, ["-m", "personify.cli", "init"]);
 

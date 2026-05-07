@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import socket
+import subprocess
 
 from typer.testing import CliRunner
 
@@ -11,7 +12,7 @@ def test_dev_command_starts_docker_backend_and_frontend(monkeypatch) -> None:
     docker_calls: list[dict] = []
     popen_calls: list[dict] = []
 
-    def fake_run(cmd, cwd=None, check=False):
+    def fake_run(cmd, cwd=None, check=False, **_kwargs):
         docker_calls.append({"cmd": cmd, "cwd": cwd, "check": check})
 
     class FakeProc:
@@ -101,6 +102,26 @@ def test_dev_command_reuses_running_backend_and_starts_frontend(monkeypatch) -> 
     assert len(popen_calls) == 1
     assert popen_calls[0]["cmd"][:3] == ["pnpm.cmd", "exec", "vite"]
     assert "already running" in result.output
+
+
+def test_dev_command_explains_when_docker_desktop_is_not_running(monkeypatch) -> None:
+    import personify.cli as cli
+
+    def fake_run(*_args, **_kwargs):
+        raise subprocess.CalledProcessError(
+            1,
+            ["docker", "compose", "up", "-d"],
+            stderr="open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.",
+        )
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+    result = CliRunner().invoke(cli.app, ["dev"])
+
+    assert result.exit_code == 1
+    assert "Docker Desktop is not running" in result.output
+    assert "npm start" in result.output
+    assert "Traceback" not in result.output
 
 
 def test_port_probe_detects_ipv6_localhost_listener() -> None:

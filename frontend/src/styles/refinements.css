@@ -384,12 +384,17 @@ textarea {
 }
 
 .barlist .bartrack {
-  height: 14px;
+  height: 18px;
   background: var(--bg-soft);
   border-radius: 0;
   overflow: hidden;
   border: 1px solid var(--line);
   position: relative;
+  /* Subtle inner darkening at the top edge — gives the track a recessed,
+   * "channel" feel that makes the stripe inside read as a printed mark
+   * rather than a flat fill. Stays under 4% in both themes so it never
+   * competes with the accent. */
+  box-shadow: inset 0 1px 0 var(--inset-tint-soft);
 }
 
 .barlist .barfill {

@@ -15,6 +15,37 @@ export function run(command, args, options = {}) {
   }
 }
 
+export function ensureDockerRunning() {
+  const result = spawnSync("docker", ["info"], {
+    encoding: "utf8",
+    shell: isWindows,
+    stdio: "pipe",
+  });
+
+  if (result.status === 0) {
+    return;
+  }
+
+  const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.toLowerCase();
+  if (result.error?.code === "ENOENT") {
+    console.error("Docker was not found. Install Docker Desktop, start it, then run this command again.");
+  } else if (
+    output.includes("dockerdesktop") ||
+    output.includes("cannot connect to the docker daemon") ||
+    output.includes("docker daemon is not running") ||
+    output.includes("pipe/docker")
+  ) {
+    console.error("Docker Desktop is not running. Start Docker Desktop and wait until the engine is running, then run this command again.");
+  } else {
+    console.error("Docker is not ready. Start Docker Desktop and try again.");
+    const details = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
+    if (details) {
+      console.error(details);
+    }
+  }
+  process.exit(1);
+}
+
 export function ensureVenv() {
   if (!existsSync(venvPython)) {
     const [command, args] = resolvePython();

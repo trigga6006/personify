@@ -80,6 +80,41 @@ def _display_host(host: str) -> str:
     return "localhost" if host in {"127.0.0.1", "0.0.0.0"} else host
 
 
+def _docker_compose_up(root: Path) -> None:
+    try:
+        subprocess.run(
+            ["docker", "compose", "up", "-d"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        console.print(
+            "[red]Docker was not found.[/red] Install Docker Desktop, start it, then run "
+            "[bold]npm start[/bold] again."
+        )
+        raise typer.Exit(1) from None
+    except subprocess.CalledProcessError as exc:
+        output = "\n".join(part for part in [exc.stdout, exc.stderr] if part).strip()
+        lower_output = output.lower()
+        if (
+            "dockerdesktop" in lower_output
+            or "cannot connect to the docker daemon" in lower_output
+            or "docker daemon is not running" in lower_output
+            or "pipe/docker" in lower_output
+        ):
+            console.print(
+                "[red]Docker Desktop is not running.[/red] Start Docker Desktop and wait "
+                "until it says the engine is running, then run [bold]npm start[/bold] again."
+            )
+        else:
+            console.print("[red]Docker Compose failed.[/red]")
+            if output:
+                console.print(output)
+        raise typer.Exit(1) from None
+
+
 def _health_url(host: str, port: int) -> str:
     return f"http://{_display_host(host)}:{port}/health"
 
@@ -366,7 +401,7 @@ def dev(
     display_host = _display_host(h)
 
     console.print("[bold]Docker[/bold]      docker compose up -d")
-    subprocess.run(["docker", "compose", "up", "-d"], cwd=root, check=True)
+    _docker_compose_up(root)
 
     package_runner = shutil.which("pnpm") or shutil.which("npm")
     if package_runner is None:
@@ -430,6 +465,7 @@ def dev(
             procs.append(("fastapi", subprocess.Popen(backend_cmd, cwd=root)))
         if not frontend_running:
             procs.append(("vite", subprocess.Popen(frontend_cmd, cwd=frontend_dir, env=frontend_env)))
+        backend_ready_deadline = time.monotonic() + 45
         last_backend_check = 0.0
         while True:
             for name, proc in procs:
@@ -440,15 +476,24 @@ def dev(
             now = time.monotonic()
             if now - last_backend_check > 2:
                 last_backend_check = now
-                if not _backend_health_ok(h, p):
-                    if _is_port_open(h, p):
-                        console.print(
-                            f"[red]FastAPI health check failed at {_health_url(h, p)}[/red]"
-                        )
-                        raise typer.Exit(1)
-                    console.print("[yellow]FastAPI stopped; restarting it[/yellow]")
-                    proc = subprocess.Popen(backend_cmd, cwd=root)
-                    procs.append(("fastapi", proc))
+                if _backend_health_ok(h, p):
+                    continue
+                if now < backend_ready_deadline:
+                    continue
+                if _is_port_open(h, p):
+                    console.print(
+                        f"[red]FastAPI readiness check failed at {_health_url(h, p)}[/red]"
+                    )
+                    raise typer.Exit(1)
+                if not backend_running:
+                    console.print(
+                        f"[red]FastAPI did not become reachable at {_health_url(h, p)}[/red]"
+                    )
+                    raise typer.Exit(1)
+                console.print("[yellow]FastAPI stopped; restarting it[/yellow]")
+                proc = subprocess.Popen(backend_cmd, cwd=root)
+                procs.append(("fastapi", proc))
+                backend_ready_deadline = time.monotonic() + 45
             time.sleep(0.5)
     except KeyboardInterrupt:
         console.print("\n[yellow]stopping dev servers[/yellow]")
