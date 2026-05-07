@@ -9,6 +9,7 @@ from personify.parsers.discord import DiscordParser
 from personify.parsers.files import FilesParser
 from personify.parsers.github_repo import GitHubRepoParser
 from personify.parsers.gmail import GmailParser
+from personify.parsers.google_takeout import GoogleTakeoutParser
 from personify.parsers.notion import NotionParser
 from personify.parsers.twitter import TwitterParser
 
@@ -21,6 +22,7 @@ PARSERS: dict[str, Type[ParserBase]] = {
     GitHubRepoParser.SOURCE: GitHubRepoParser,
     FilesParser.SOURCE: FilesParser,
     TwitterParser.SOURCE: TwitterParser,
+    GoogleTakeoutParser.SOURCE: GoogleTakeoutParser,
 }
 
 

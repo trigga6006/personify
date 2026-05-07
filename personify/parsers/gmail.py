@@ -47,6 +47,36 @@ def _ts(raw: str | None) -> datetime | None:
         return None
 
 
+def iter_mbox_messages(mbox_path: Path) -> Iterator[ParsedItem]:
+    mbox = mailbox.mbox(str(mbox_path))
+    try:
+        for key, msg in mbox.iteritems():
+            subject = msg.get("Subject") or "(no subject)"
+            sender = msg.get("From") or ""
+            to = msg.get("To") or ""
+            msg_id = msg.get("Message-ID") or msg.get("Message-Id")
+            body = _decode_payload(msg)
+            ts = _ts(msg.get("Date"))
+            yield ParsedItem(
+                kind="email",
+                title=subject,
+                body=body,
+                ts=ts,
+                native_id=msg_id.strip() if msg_id else None,
+                metadata={
+                    "from": sender,
+                    "to": to,
+                    "cc": msg.get("Cc") or "",
+                    "labels": msg.get("X-Gmail-Labels") or "",
+                    "thread": msg.get("X-GM-THRID") or "",
+                    "mbox": mbox_path.name,
+                },
+                tags=[("from", sender), ("subject", subject)],
+            )
+    finally:
+        mbox.close()
+
+
 class GmailParser(ParserBase):
     SOURCE = "gmail"
     PARSER_VERSION = "0.1.0"
@@ -67,30 +97,4 @@ class GmailParser(ParserBase):
             mbox_files = sorted(raw_path.glob("*.mbox"))
 
         for mbox_path in mbox_files:
-            mbox = mailbox.mbox(str(mbox_path))
-            try:
-                for key, msg in mbox.iteritems():
-                    subject = msg.get("Subject") or "(no subject)"
-                    sender = msg.get("From") or ""
-                    to = msg.get("To") or ""
-                    msg_id = msg.get("Message-ID") or msg.get("Message-Id")
-                    body = _decode_payload(msg)
-                    ts = _ts(msg.get("Date"))
-                    yield ParsedItem(
-                        kind="email",
-                        title=subject,
-                        body=body,
-                        ts=ts,
-                        native_id=msg_id.strip() if msg_id else None,
-                        metadata={
-                            "from": sender,
-                            "to": to,
-                            "cc": msg.get("Cc") or "",
-                            "labels": msg.get("X-Gmail-Labels") or "",
-                            "thread": msg.get("X-GM-THRID") or "",
-                            "mbox": mbox_path.name,
-                        },
-                        tags=[("from", sender), ("subject", subject)],
-                    )
-            finally:
-                mbox.close()
+            yield from iter_mbox_messages(mbox_path)
